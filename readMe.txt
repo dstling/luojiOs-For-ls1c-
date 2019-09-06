@@ -1,14 +1,17 @@
+龙芯1C裸机库+多线程+shell
+
 闲来无事，给裸机加上多线程和shell
+风格完全是裸机化，方便学习追踪和学习
+luojiOs bug基本消除了，可以完美运行了
 
-代码抄自rtthread（没有严格按照rtt的调度来移植）
-rtthread是完美的
+裸机增加多线程和shell交互是有用的，方便调试，调试完成后屏蔽多线程入口即可
+多线程的缺点就是降低了实时性，尤其是应用于工控领域
+严格按照流程执行的程序会存在一些不确定性
 
-裸机增加多线程和shell是有用的，方便调试，调试完成后删除多线程即可
-多线程的缺点就是降低了实时性，严格按照流程执行的程序会存在一些不确定性
-
-风格完全是裸机风格，方便学习追踪和学习
-
-现在多线程能够好好的运行了
+裸机代码来自  https://gitee.com/caogos/OpenLoongsonLib1c
+多线程来自rtthread  https://github.com/RT-Thread/rt-thread
+rtthread是完美的、伟大的，致敬！（没有严格按照rtt的调度来移植）
+rtthread的官方doc：https://www.rt-thread.org/document/site/um4003-rtthread-programming-manual.pdf
 =============================
 
 白菜板内存8M 直接可以编译运行
