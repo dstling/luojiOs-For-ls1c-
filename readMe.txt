@@ -4,14 +4,21 @@
 风格完全是裸机化，方便学习追踪和学习
 luojiOs bug基本消除了，可以完美运行了
 
-裸机增加多线程和shell交互是有用的，方便调试，调试完成后屏蔽多线程入口即可
+裸机增加多线程和shell交互是有用的，方便调试，调试完成后屏蔽多线程入口，加入纯裸接口即可
 多线程的缺点就是降低了实时性，尤其是应用于工控领域
-严格按照流程执行的程序会存在一些不确定性
+在多线程中，严格按照流程执行的程序会存在一些不确定性
 
 裸机代码来自  https://gitee.com/caogos/OpenLoongsonLib1c
 多线程来自rtthread  https://github.com/RT-Thread/rt-thread
 rtthread是完美的、伟大的，致敬！（没有严格按照rtt的调度来移植）
 rtthread的官方doc：https://www.rt-thread.org/document/site/um4003-rtthread-programming-manual.pdf
+rtthread 龙芯1C的部分默认用的编译器是mips-sde-elf
+
+而裸机OS这里使用的编译器是官方的gcc-4.3-ls232，这里提供下
+环境在虚拟机中设置
+export PATH=$PATH:编译器解压的绝对路径（如cd /home/luojiN/OpenLoongsonLib1c20190726/src/）
+cd  该代码在虚拟机中的绝对路径（如cd /home/luojiN/OpenLoongsonLib1c20190726/src/）
+make吧
 =============================
 
 白菜板内存8M 直接可以编译运行
