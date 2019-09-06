@@ -1,0 +1,566 @@
+#include <stdio.h>
+#include "rtdef.h"
+#include "shell.h"
+
+struct finsh_shell *shell;
+
+struct finsh_syscall *_syscall_table_begin  = NULL;
+struct finsh_syscall *_syscall_table_end    = NULL;
+
+char msh_is_used(void)
+{
+    return 1;
+}
+int msh_help(int argc, char **argv)
+{
+    printf("RT-Thread shell commands:\n");
+    {
+        struct finsh_syscall *index;
+
+        for (index = _syscall_table_begin;
+                index < _syscall_table_end;
+                FINSH_NEXT_SYSCALL(index))
+        {
+			//printf("fun name:%s,desc:%s\n",index->name,index->desc);
+			if (strncmp(index->name, "__cmd_", 6) != 0) 
+				continue;
+            printf("%-16s - %s\n", &index->name[6], index->desc);
+        }
+    }
+    printf("\n");
+
+    return 0;
+}
+void msh_auto_complete_path(char *path)
+{
+
+}
+
+int msh_exec_script(const char *cmd_line, int size)
+{
+	return 1;
+}
+void msh_auto_complete(char *prefix)
+{
+    int length, min_length;
+    const char *name_ptr, *cmd_name;
+    struct finsh_syscall *index;
+
+    min_length = 0;
+    name_ptr = RT_NULL;
+
+    if (*prefix == '\0')
+    {
+        msh_help(0, RT_NULL);
+        return;
+    }
+
+    /* check whether a spare in the command */
+    {
+        char *ptr;
+
+        ptr = prefix + strlen(prefix);
+        while (ptr != prefix)
+        {
+            if (*ptr == ' ')
+            {
+                msh_auto_complete_path(ptr + 1);
+                break;
+            }
+
+            ptr --;
+        }
+    }
+
+    /* checks in internal command */
+    {
+        for (index = _syscall_table_begin; index < _syscall_table_end; FINSH_NEXT_SYSCALL(index))
+        {
+            /* skip finsh shell function */
+            if (strncmp(index->name, "__cmd_", 6) != 0) continue;
+
+            cmd_name = (const char *) &index->name[6];
+            if (strncmp(prefix, cmd_name, strlen(prefix)) == 0)
+            {
+                if (min_length == 0)
+                {
+                    /* set name_ptr */
+                    name_ptr = cmd_name;
+                    /* set initial length */
+                    min_length = strlen(name_ptr);
+                }
+
+                length = str_common(name_ptr, cmd_name);
+                if (length < min_length)
+                    min_length = length;
+
+                printf("%s\n", cmd_name);
+            }
+        }
+    }
+
+    /* auto complete string */
+    if (name_ptr != NULL)
+    {
+        rt_strncpy(prefix, name_ptr, min_length);
+    }
+
+    return ;
+}
+
+
+static char shell_handle_history(struct finsh_shell *shell)
+{
+
+    printf("\033[2K\r");
+    printf("%s%s", FINSH_PROMPT, shell->line);
+    return 0;
+}
+
+static void shell_push_history(struct finsh_shell *shell)
+{
+    if (shell->line_position != 0)
+    {
+        /* push history */
+        if (shell->history_count >= FINSH_HISTORY_LINES)
+        {
+            /* if current cmd is same as last cmd, don't push */
+            if (memcmp(&shell->cmd_history[FINSH_HISTORY_LINES - 1], shell->line, FINSH_CMD_SIZE))
+            {
+                /* move history */
+                int index;
+                for (index = 0; index < FINSH_HISTORY_LINES - 1; index ++)
+                {
+                    memcpy(&shell->cmd_history[index][0],
+                           &shell->cmd_history[index + 1][0], FINSH_CMD_SIZE);
+                }
+                memset(&shell->cmd_history[index][0], 0, FINSH_CMD_SIZE);
+                memcpy(&shell->cmd_history[index][0], shell->line, shell->line_position);
+
+                /* it's the maximum history */
+                shell->history_count = FINSH_HISTORY_LINES;
+            }
+        }
+        else
+        {
+            /* if current cmd is same as last cmd, don't push */
+            if (shell->history_count == 0 || memcmp(&shell->cmd_history[shell->history_count - 1], shell->line, FINSH_CMD_SIZE))
+            {
+                shell->current_history = shell->history_count;
+                memset(&shell->cmd_history[shell->history_count][0], 0, FINSH_CMD_SIZE);
+                memcpy(&shell->cmd_history[shell->history_count][0], shell->line, shell->line_position);
+
+                /* increase count and set current history position */
+                shell->history_count ++;
+            }
+        }
+    }
+    shell->current_history = shell->history_count;
+}
+
+static void shell_auto_complete(char *prefix)
+{
+    printf("\n");
+    if (msh_is_used() == 1)
+    {
+        msh_auto_complete(prefix);
+    }
+    printf("%s%s", FINSH_PROMPT, prefix);
+}
+typedef int (*cmd_function_t)(int argc, char **argv);
+#define FINSH_ARG_MAX 10
+
+
+static int msh_split(char *cmd, unsigned long length, char *argv[FINSH_ARG_MAX])
+{
+    char *ptr;
+    unsigned long position;
+    unsigned long argc;
+    unsigned long i;
+
+    ptr = cmd;
+    position = 0; argc = 0;
+
+    while (position < length)
+    {
+        /* strip bank and tab */
+        while ((*ptr == ' ' || *ptr == '\t') && position < length)
+        {
+            *ptr = '\0';
+            ptr ++; position ++;
+        }
+
+        if(argc >= FINSH_ARG_MAX)
+        {
+            printf("Too many args ! We only Use:\n");
+            for(i = 0; i < argc; i++)
+            {
+                printf("%s ", argv[i]);
+            }
+            printf("\n");
+            break;
+        }
+
+        if (position >= length) break;
+
+        /* handle string */
+        if (*ptr == '"')
+        {
+            ptr ++; position ++;
+            argv[argc] = ptr; argc ++;
+
+            /* skip this string */
+            while (*ptr != '"' && position < length)
+            {
+                if (*ptr == '\\')
+                {
+                    if (*(ptr + 1) == '"')
+                    {
+                        ptr ++; position ++;
+                    }
+                }
+                ptr ++; position ++;
+            }
+            if (position >= length) break;
+
+            /* skip '"' */
+            *ptr = '\0'; ptr ++; position ++;
+        }
+        else
+        {
+            argv[argc] = ptr;
+            argc ++;
+            while ((*ptr != ' ' && *ptr != '\t') && position < length)
+            {
+                ptr ++; position ++;
+            }
+            if (position >= length) break;
+        }
+    }
+
+    return argc;
+}
+static cmd_function_t msh_get_cmd(char *cmd, int size)
+{
+    struct finsh_syscall *index;
+    cmd_function_t cmd_func = RT_NULL;
+
+    for (index = _syscall_table_begin;
+            index < _syscall_table_end;
+            FINSH_NEXT_SYSCALL(index))
+    {
+		//printf("fun name:%s,desc:%s\n",index->name,index->desc);
+		if (strncmp(index->name, "__cmd_", 6) != 0) 
+			continue;
+
+        if (strncmp(&index->name[6], cmd, size) == 0 &&
+                index->name[6 + size] == '\0')
+        {
+            cmd_func = (cmd_function_t)index->func;
+            break;
+        }
+    }
+
+    return cmd_func;
+}
+
+static int _msh_exec_cmd(char *cmd, unsigned long length, int *retp)
+{
+    int argc;
+    unsigned long cmd0_size = 0;
+    cmd_function_t cmd_func;
+    char *argv[FINSH_ARG_MAX];
+
+    RT_ASSERT(cmd);
+    RT_ASSERT(retp);
+
+    /* find the size of first command */
+    while ((cmd[cmd0_size] != ' ' && cmd[cmd0_size] != '\t') && cmd0_size < length)
+        cmd0_size ++;
+    if (cmd0_size == 0)
+        return -RT_ERROR;
+
+    cmd_func = msh_get_cmd(cmd, cmd0_size);
+    if (cmd_func == RT_NULL)
+        return -RT_ERROR;
+
+    /* split arguments */
+    memset(argv, 0x00, sizeof(argv));
+    argc = msh_split(cmd, length, argv);
+    if (argc == 0)
+        return -RT_ERROR;
+
+    /* exec this command */
+    *retp = cmd_func(argc, argv);
+    return 0;
+}
+
+int msh_exec(char *cmd, unsigned long length)
+{
+    int cmd_ret;
+    /* strim the beginning of command */
+    while (*cmd  == ' ' || *cmd == '\t')
+    {
+        cmd++;
+        length--;
+    }
+
+    if (length == 0)
+        return 0;
+
+    /* Exec sequence:
+     * 1. built-in command
+     * 2. module(if enabled)
+     */
+    if (_msh_exec_cmd(cmd, length, &cmd_ret) == 0)
+    {
+        return cmd_ret;
+    }
+    if (msh_exec_script(cmd, length) == 0)
+    {
+        return 0;
+    }
+
+    /* truncate the cmd at the first space. */
+    {
+        char *tcmd;
+        tcmd = cmd;
+        while (*tcmd != ' ' && *tcmd != '\0')
+        {
+            tcmd++;
+        }
+        *tcmd = '\0';
+    }
+    printf("%s: command not found.\n", cmd);
+    return -1;
+}
+
+void shell_thread_entry(void *parameter)
+{
+    int ch;
+    while (1)
+    {
+		ch = getchar();
+        if (ch < 0)
+        {
+            continue;
+        }
+		//printf("input:0x%02X\n",ch);
+
+
+		/*
+		 *上下左右键特殊处理
+		 * handle control key
+		 * up key  : 0x1b 0x5b 0x41
+		 * down key: 0x1b 0x5b 0x42
+		 * right key:0x1b 0x5b 0x43
+		 * left key: 0x1b 0x5b 0x44
+		 */
+		if (ch == 0x1b)
+		{
+			shell->stat = WAIT_SPEC_KEY;
+			continue;
+		}
+		else if (shell->stat == WAIT_SPEC_KEY)
+		{
+			if (ch == 0x5b)
+			{
+				shell->stat = WAIT_FUNC_KEY;
+				continue;
+			}
+
+			shell->stat = WAIT_NORMAL;
+		}
+		else if (shell->stat == WAIT_FUNC_KEY)
+		{
+			shell->stat = WAIT_NORMAL;
+
+			if (ch == 0x41) /* up key */
+			{
+				/* prev history */
+				if (shell->current_history > 0)
+					shell->current_history --;
+				else
+				{
+					shell->current_history = 0;
+					continue;
+				}
+
+				/* copy the history command */
+				memcpy(shell->line, &shell->cmd_history[shell->current_history][0],
+					   FINSH_CMD_SIZE);
+				shell->line_curpos = shell->line_position = strlen(shell->line);
+				shell_handle_history(shell);
+				continue;
+			}
+			else if (ch == 0x42) /* down key */
+			{
+				/* next history */
+				if (shell->current_history < shell->history_count - 1)
+					shell->current_history ++;
+				else
+				{
+					/* set to the end of history */
+					if (shell->history_count != 0)
+						shell->current_history = shell->history_count - 1;
+					else
+						continue;
+				}
+
+				memcpy(shell->line, &shell->cmd_history[shell->current_history][0],
+					   FINSH_CMD_SIZE);
+				shell->line_curpos = shell->line_position = strlen(shell->line);
+				shell_handle_history(shell);
+				continue;
+			}
+			else if (ch == 0x44) /* left key */
+			{
+				if (shell->line_curpos)
+				{
+					printf("\b");
+					shell->line_curpos --;
+				}
+
+				continue;
+			}
+			else if (ch == 0x43) /* right key */
+			{
+				if (shell->line_curpos < shell->line_position)
+				{
+					printf("%c", shell->line[shell->line_curpos]);
+					shell->line_curpos ++;
+				}
+
+				continue;
+			}
+		}
+
+		/* received null or error */
+		if (ch == '\0' || ch == 0xFF) 
+			continue;
+        else if (ch == '\t')//tab key
+        {
+            int i;
+            /* move the cursor to the beginning of line */
+            for (i = 0; i < shell->line_curpos; i++)
+                printf("\b");
+
+            /* auto complete */
+            shell_auto_complete(&shell->line[0]);
+            /* re-calculate position */
+            shell->line_curpos = shell->line_position = strlen(shell->line);
+
+            continue;
+        }
+        else if (ch == 0x7f || ch == 0x08)/* handle backspace key */
+        {
+            /* note that shell->line_curpos >= 0 */
+            if (shell->line_curpos == 0)
+                continue;
+
+            shell->line_position--;
+            shell->line_curpos--;
+
+            if (shell->line_position > shell->line_curpos)
+            {
+                int i;
+
+                memmove(&shell->line[shell->line_curpos],
+                           &shell->line[shell->line_curpos + 1],
+                           shell->line_position - shell->line_curpos);
+                shell->line[shell->line_position] = 0;
+
+                printf("\b%s  \b", &shell->line[shell->line_curpos]);
+
+                /* move the cursor to the origin position */
+                for (i = shell->line_curpos; i <= shell->line_position; i++)
+                    printf("\b");
+            }
+            else
+            {
+                printf("\b \b");
+                shell->line[shell->line_position] = 0;
+            }
+
+            continue;
+        }
+		
+		/* handle end of line, break */
+		if (ch == '\r' || ch == '\n')
+		{
+			shell_push_history(shell);
+			if (msh_is_used() == 1)
+			{
+				if (shell->echo_mode)
+					printf("\n");
+				msh_exec(shell->line, shell->line_position);
+			}
+			printf(FINSH_PROMPT);
+			//printf("\n");
+			memset(shell->line, 0, sizeof(shell->line));
+			shell->line_curpos = shell->line_position = 0;
+			continue;
+		}
+
+        /* it's a large line, discard it */
+        if (shell->line_position >= FINSH_CMD_SIZE)
+            shell->line_position = 0;
+
+        /* normal character */
+        if (shell->line_curpos < shell->line_position)
+        {
+            int i;
+
+            memmove(&shell->line[shell->line_curpos + 1],
+                       &shell->line[shell->line_curpos],
+                       shell->line_position - shell->line_curpos);
+            shell->line[shell->line_curpos] = ch;
+            if (shell->echo_mode)
+                printf("%s", &shell->line[shell->line_curpos]);
+
+            /* move the cursor to new position */
+            for (i = shell->line_curpos; i < shell->line_position; i++)
+                printf("\b");
+        }
+        else
+        {
+            shell->line[shell->line_position] = ch;
+            if (shell->echo_mode)
+                printf("%c", ch);
+        }
+
+        ch = 0;
+        shell->line_position ++;
+        shell->line_curpos++;
+        if (shell->line_position >= FINSH_CMD_SIZE)
+        {
+            /* clear command line */
+            shell->line_position = 0;
+            shell->line_curpos = 0;
+        }
+
+		
+    }
+}
+
+void finsh_system_function_init(const void *begin, const void *end)
+{
+    _syscall_table_begin = (struct finsh_syscall *) begin;
+    _syscall_table_end = (struct finsh_syscall *) end;
+}
+
+
+void shellInit(void)
+{
+    extern const int __fsymtab_start;
+    extern const int __fsymtab_end;
+	finsh_system_function_init(&__fsymtab_start, &__fsymtab_end);
+	printf("_syscall_table_begin:0x%08x,_syscall_table_end:0x%08x\n",_syscall_table_begin,_syscall_table_end);
+    shell = (struct finsh_shell *)malloc(sizeof(struct finsh_shell));
+	memset(shell,0,sizeof(sizeof(struct finsh_shell)));
+	shell->echo_mode=1;
+	shell->prompt_mode=1;
+	
+	thread_join_init("shell_thread_entry",shell_thread_entry,NULL,4096,RT_THREAD_PRIORITY_MAX-1,20);//加入shell线程 给他最低的优先级吧
+}
+
