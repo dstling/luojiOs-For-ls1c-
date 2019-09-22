@@ -219,7 +219,7 @@ long rt_timer_stop(rt_timer_t timer)
     level = rt_hw_interrupt_disable();
 
     //_rt_timer_remove(timer);
-    rt_list_remove(&rt_timer_list);
+    rt_list_remove(&(timer->timelist));
 
     /* enable interrupt */
     rt_hw_interrupt_enable(level);
