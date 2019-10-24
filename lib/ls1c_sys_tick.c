@@ -41,7 +41,7 @@ void sys_tick_init(unsigned int tick)
 {
     // 设置定时时间
     write_c0_compare(CPU_HZ/2/tick);
-    write_c0_count(0);
+    write_c0_count(0);//当count值到达compare时发生一次中断
 
     // 使能
     sys_tick_enable();
@@ -55,7 +55,11 @@ void sys_tick_increase(void)
     ++system_tick;
 }
 
-extern 	void rt_schedule(void);
+#include<rtdef.h>
+#include<stdio.h>
+extern void rt_schedule(void);
+extern struct rt_thread *rt_current_thread;
+
 // 滴答定时器中断处理函数
 void sys_tick_handler(void)
 {
@@ -67,7 +71,18 @@ void sys_tick_handler(void)
 
     sys_tick_increase();
 	
-	threadTask();//dstling
+	//threadTask();//dstling
+	if(rt_current_thread!=NULL)
+	{
+		--rt_current_thread->remaining_tick;
+		if(rt_current_thread->remaining_tick==0)//当前运行线程tick用完了
+		{	
+			rt_current_thread->remaining_tick=rt_current_thread->init_tick;//重新赋值
+			rt_schedule();//执行一次调度
+		}
+		
+		rt_timer_check();
+	}
     return ;
 }
 

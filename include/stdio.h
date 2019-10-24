@@ -6,7 +6,9 @@
 
 #if __mips >= 3
 #define	HAVE_QUAD	/* QUAD data type native */
+#else
 #endif
+
 
 
 #ifndef NULL

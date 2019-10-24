@@ -98,6 +98,7 @@ int testThread(void)
 	
 	return 0;
 }
+FINSH_FUNCTION_EXPORT(testThread,testThread in sys);
 
 struct rt_semaphore sem_dst;//静态信号量，接收数据线程和处理数据线程抢占
 
@@ -216,10 +217,23 @@ long test_jointhread(void)
 
 FINSH_FUNCTION_EXPORT(test_jointhread,test_jointhread in sys);
 
+
+void testMallocWhile(void)
+{
+	char*pt;
+	while(1)
+	{
+		pt=malloc(80);
+		printf("pt:%p\n",pt);
+		free(pt);
+		rt_thread_sleep(100);
+	}
+}
+
 void test_malloc(void)
 {
 
-	
+	thread_join_init("testMallocWhile",testMallocWhile,NULL,2048,14,50);
 /*
 	int i=1;
 	while(1)
@@ -258,14 +272,17 @@ void test_malloc(void)
 	char *pp1=(char*)malloc(100);
 	printf("malloc test pp1:0x%08X\npp1:",pp1);
 	*/
+/*
 	char *pp2=(char*)malloc(4095);
 	printf("\nmalloc test pp2:0x%08X\n",pp2);
-
+*/
 	/*
 	char *pp4=(char*)malloc(4097);
 	printf("malloc test pp4:0x%08X\n",pp4);
 
 	*/
+	
+	/*
 	char *pp5=(char*)malloc(4096);
 	printf("malloc test pp5:0x%08X\n",pp5);
 	free(pp5);
@@ -276,6 +293,8 @@ void test_malloc(void)
 	printf("malloc test pp5:0x%08X\n",pp5);
 	free(pp5);
 	printf("malloc free end2\n");
+	*/
+	
 	/*
 	char *pp6=(char*)malloc(4096*2);
 	printf("malloc test pp6:0x%08X\n",pp6);
@@ -296,9 +315,47 @@ void test_malloc(void)
 		printf("malloc test ppWhile:0x%08X\n",ppWhile);
 	}
 	*/
+	/*
+	int i=0;
+	char * memPt;
+	for(i=1;i<4096;i++)
+	{
+		memPt=malloc(i);
+		printf("i:%d,memPt:%p\n",i,memPt);
+	}
+	*/
 }
 
 FINSH_FUNCTION_EXPORT(test_malloc,test_malloc in sys);
+
+void malloc_thread1(void*userdata)
+{
+	void *pt;
+	int size=1532;
+	while(1)
+	{
+		pt=malloc(size);
+	}
+}
+
+void malloc_thread2(void*userdata)
+{
+	void *pt;
+	int size=1534;
+	while(1)
+	{
+		pt=malloc(size);
+	}
+}
+
+void testMalloc(void)
+{
+	thread_join_init("malloc_thread1",malloc_thread1,NULL,2048,3,10);
+	thread_join_init("malloc_thread2",malloc_thread2,NULL,2048,3,10);
+	return 0;
+}
+FINSH_FUNCTION_EXPORT(testMalloc,testMalloc in sys);
+
 
 void dead_testthread01(void*userdata)
 {
@@ -335,27 +392,6 @@ long deadThread_jointhread(void)
 FINSH_FUNCTION_EXPORT(deadThread_jointhread,deadThread_jointhread in sys);
 
 
-void dataHexPrint(void * datas, int dataLen,char * title)
-{
-	int i=0;
-	int line=1;
-	int line_count=0;
-	printf("\n======================================\n");
-	printf("%s. bytes data len:%d\n",title,dataLen);
-	printf("%d	:",line);
-	for(i=0;i<dataLen;i++,line_count++)
-	{
-		if(line_count==16)
-		{
-			line++;
-			printf("\n%d	:",line);
-			line_count=0;
-		}
-		printf("%02X ",((unsigned char *)datas)[i]);
-	}
-	printf("\n======================================\n");
-	
-}
 
 static int showThreadSpMem(int argc, char **argv)
 {

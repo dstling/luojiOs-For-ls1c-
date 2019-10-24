@@ -70,24 +70,26 @@ sys_mutex_t lock_tcpip_core;
  *
  * @param arg unused argument
  */
-static void
-tcpip_thread(void *arg)
+static void tcpip_thread(void *arg)
 {
   struct tcpip_msg *msg;
   LWIP_UNUSED_ARG(arg);
 
   if (tcpip_init_done != NULL) {
   	
-    tcpip_init_done(tcpip_init_done_arg);
+    tcpip_init_done(tcpip_init_done_arg);//调用sys_arch.c内的tcpip_init_done_callback rx irq中断开启 开始工作了
   }
  
   LOCK_TCPIP_CORE();
   while (1) {                          /* MAIN Loop */
+	  //printf("^");
     UNLOCK_TCPIP_CORE();
     LWIP_TCPIP_THREAD_ALIVE();
     /* wait for a message, timeouts are processed while waiting */
-    sys_timeouts_mbox_fetch(&mbox, (void **)&msg);
+    sys_timeouts_mbox_fetch(&mbox, (void **)&msg);//尝试获取msg
+	//printf("tcpip_thread:%d\n",tcpip_counter);
     LOCK_TCPIP_CORE();
+	//printf("$:%d\n",msg->type);
     switch (msg->type) {
 #if LWIP_NETCONN
     case TCPIP_MSG_API:
@@ -97,11 +99,11 @@ tcpip_thread(void *arg)
 #endif /* LWIP_NETCONN */
 
 #if !LWIP_TCPIP_CORE_LOCKING_INPUT
-    case TCPIP_MSG_INPKT:
+    case TCPIP_MSG_INPKT://接收到msg到这里了
       LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: PACKET %p\n", (void *)msg));
-#if LWIP_ETHERNET
-      if (msg->msg.inp.netif->flags & (NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET)) {
-        ethernet_input(msg->msg.inp.p, msg->msg.inp.netif);
+#if LWIP_ETHERNET			//yes
+      if (msg->msg.inp.netif->flags & (NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET)) {//NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_IGMP
+        ethernet_input(msg->msg.inp.p, msg->msg.inp.netif);//内存会泄露 该怎么办
       } else
 #endif /* LWIP_ETHERNET */
       {
@@ -160,41 +162,56 @@ tcpip_thread(void *arg)
  * @param inp the network interface on which the packet was received
  */
 err_t
-tcpip_input(struct pbuf *p, struct netif *inp)
+tcpip_input(struct pbuf *p, struct netif *inp)//被接收线程eth_rx_thread_entry调用
 {
-#if LWIP_TCPIP_CORE_LOCKING_INPUT
-  err_t ret;
-  LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_input: PACKET %p/%p\n", (void *)p, (void *)inp));
-  LOCK_TCPIP_CORE();
+
+#if LWIP_TCPIP_CORE_LOCKING_INPUT//no
+	err_t ret;
+	LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_input: PACKET %p/%p\n", (void *)p, (void *)inp));
+	LOCK_TCPIP_CORE();
 #if LWIP_ETHERNET
-  if (inp->flags & (NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET)) {
-    ret = ethernet_input(p, inp);
-  } else
+	if (inp->flags & (NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET)) {
+		ret = ethernet_input(p, inp);
+	} else
 #endif /* LWIP_ETHERNET */
-  {
-    ret = ip_input(p, inp);
-  }
-  UNLOCK_TCPIP_CORE();
-  return ret;
-#else /* LWIP_TCPIP_CORE_LOCKING_INPUT */
-  struct tcpip_msg *msg;
+	{
+		ret = ip_input(p, inp);
+	}
+	UNLOCK_TCPIP_CORE();
+	return ret;
+#else /* LWIP_TCPIP_CORE_LOCKING_INPUT */// 到这里
 
-  if (!sys_mbox_valid(&mbox)) {
-    return ERR_VAL;
-  }
-  msg = (struct tcpip_msg *)memp_malloc(MEMP_TCPIP_MSG_INPKT);
-  if (msg == NULL) {
-    return ERR_MEM;
-  }
+	struct tcpip_msg *msg;
 
-  msg->type = TCPIP_MSG_INPKT;
-  msg->msg.inp.p = p;
-  msg->msg.inp.netif = inp;
-  if (sys_mbox_trypost(&mbox, msg) != ERR_OK) {
-    memp_free(MEMP_TCPIP_MSG_INPKT, msg);
-    return ERR_MEM;
-  }
-  return ERR_OK;
+	if (!sys_mbox_valid(&mbox)) {
+		return ERR_VAL;
+	}
+	while(1)
+	{
+		msg = (struct tcpip_msg *)memp_malloc(MEMP_TCPIP_MSG_INPKT);//内存会申请失败 线程间同步存在问题 但是使用起来还可以
+		if (msg == NULL) {
+			extern int memp_malloc_counter;
+			//printf("%s,%s,%d,tcpip_input msg=NULL!thread Sleep a little while,try again,memp_malloc_counter:%d\n",__FILE__, __func__, __LINE__,memp_malloc_counter);
+			LWIP_DEBUGF(TCPIP_DEBUG,("%s,%s,%d,tcpip_input msg=NULL!thread Sleep a little while,try again,memp_malloc_counter:%d\n",__FILE__, __func__, __LINE__,memp_malloc_counter));
+			//return ERR_MEM;
+			if(memp_malloc_counter>10)//线程稍微让出，让tcpip thread先处理，处理完msg后会释放之间堆积的msg，内存就有了
+				rt_thread_sleep(50);
+			else
+				rt_thread_sleep(5);
+		}
+		else
+			break;
+	}
+
+	msg->type = TCPIP_MSG_INPKT;//接收到数据赋值这个TCPIP_MSG_INPKT
+	msg->msg.inp.p = p;
+	msg->msg.inp.netif = inp;
+	if (sys_mbox_trypost(&mbox, msg) != ERR_OK) {//发送msg给tcpip_thread,tcpip_thread会尝试获取这个信号
+		printf("%s,%s,%d,tcpip_input sys_mbox_trypost error!!!!!!\n",__FILE__ , __func__, __LINE__);
+		memp_free(MEMP_TCPIP_MSG_INPKT, msg);
+		return ERR_MEM;
+	}
+	return ERR_OK;
 #endif /* LWIP_TCPIP_CORE_LOCKING_INPUT */
 }
 
@@ -453,19 +470,18 @@ tcpip_trycallback(struct tcpip_callback_msg* msg)
  * @param initfunc a function to call when tcpip_thread is running and finished initializing
  * @param arg argument to pass to initfunc
  */
-void
-tcpip_init(tcpip_init_done_fn initfunc, void *arg)
+void tcpip_init(tcpip_init_done_fn initfunc, void *arg)
 {
 	lwip_init();
 
 	tcpip_init_done = initfunc;
 	tcpip_init_done_arg = arg;
 	if(sys_mbox_new(&mbox, TCPIP_MBOX_SIZE) != ERR_OK) {
-	LWIP_ASSERT("failed to create tcpip_thread mbox", 0);
+		LWIP_ASSERT("failed to create tcpip_thread mbox", 0);
 	}
 #if LWIP_TCPIP_CORE_LOCKING
 	if(sys_mutex_new(&lock_tcpip_core) != ERR_OK) {
-	LWIP_ASSERT("failed to create lock_tcpip_core", 0);
+		LWIP_ASSERT("failed to create lock_tcpip_core", 0);
 	}
 #endif /* LWIP_TCPIP_CORE_LOCKING */
 

@@ -3,8 +3,40 @@
 #include <stdio.h>
 
 #include "rtdef.h"
+#include "shell.h"
+
+#define RT_DEBUG_NOT_IN_INTERRUPT                                             \
+do                                                                            \
+{                                                                             \
+    long level;                                                          \
+    level = rt_hw_interrupt_disable();                                        \
+    if (rt_interrupt_get_nest() != 0)                                         \
+    {                                                                         \
+        printf("Function[%s] shall not be used in ISR\n", __FUNCTION__);  \
+        RT_ASSERT(0)                                                          \
+    }                                                                         \
+    rt_hw_interrupt_enable(level);                                            \
+}                                                                             \
+while (0)
+	
+#define RT_DEBUG_IN_THREAD_CONTEXT                                            \
+	do																			  \
+	{																			  \
+		long level;														  \
+		level = rt_hw_interrupt_disable();										  \
+		if (rt_thread_self() == RT_NULL)										  \
+		{																		  \
+			printf("Function[%s] shall not be used before scheduler start\n", \
+					   __FUNCTION__);											  \
+			RT_ASSERT(0)														  \
+		}																		  \
+		RT_DEBUG_NOT_IN_INTERRUPT;												  \
+		rt_hw_interrupt_enable(level);											  \
+	}																			  \
+	while (0)
 
 extern unsigned int rt_interrupt_nest;
+long list_thread(void);
 
 
 rt_inline void rt_list_init(rt_list_t *l)
@@ -62,8 +94,8 @@ void rt_assert_handler(const char *ex_string, const char *func, unsigned long li
 
 struct rt_thread *rt_current_thread=NULL;
 unsigned char rt_current_priority;
-rt_list_t rt_thread_priority_table[RT_THREAD_PRIORITY_MAX];
-rt_list_t rt_thread_defunct;
+rt_list_t rt_thread_priority_table[RT_THREAD_PRIORITY_MAX];//ready list
+rt_list_t rt_thread_dead;//死亡线程
 rt_list_t rt_all_thread;//所有的线程都在这里
 
 //rt_list_t sleep_list_head;
@@ -110,15 +142,18 @@ unsigned char *rt_hw_stack_init(void *tentry, void *parameter, unsigned char *st
 		g_gp = $GP;
     }
 
+	//printf("tentry:0x%08x,stack_addr:0x%08x,g_sr:0x%08x,g_gp0x%08x\n",tentry,stack_addr,g_sr,g_gp);
+
+
     /** Start at stack top */
     stk = (unsigned int *)stack_addr;
-	*(stk)   = (unsigned int) tentry;        /* pc: Entry Point */
+	*(stk)   = (unsigned int) tentry;       /* pc: Entry Point */
 	*(--stk) = (unsigned int) 0xeeee; 		/* c0_cause */
 	*(--stk) = (unsigned int) 0xffff;		/* c0_badvaddr */
 	*(--stk) = (unsigned int) cp0_get_lo();	/* lo */
 	*(--stk) = (unsigned int) cp0_get_hi();	/* hi */
-	*(--stk) = (unsigned int) g_sr; 			/* C0_SR: HW2 = En, IE = En */
-	*(--stk) = (unsigned int) texit;	        /* ra */
+	*(--stk) = (unsigned int) g_sr; 		/* C0_SR: HW2 = En, IE = En */
+	*(--stk) = (unsigned int) texit;	    /* ra */
 	*(--stk) = (unsigned int) 0x0000001e;	/* s8 */
 	*(--stk) = (unsigned int) stack_addr;	/* sp */
 	*(--stk) = (unsigned int) g_gp;	        /* gp */
@@ -145,7 +180,7 @@ unsigned char *rt_hw_stack_init(void *tentry, void *parameter, unsigned char *st
 	*(--stk) = (unsigned int) 0x00000007;	/* a3 */
 	*(--stk) = (unsigned int) 0x00000006;	/* a2 */
 	*(--stk) = (unsigned int) 0x00000005;	/* a1 */
-	*(--stk) = (unsigned int) parameter;	    /* a0 */
+	*(--stk) = (unsigned int) parameter;	/* a0 */
 	*(--stk) = (unsigned int) 0x00000003;	/* v1 */
 	*(--stk) = (unsigned int) 0x00000002;	/* v0 */
 	*(--stk) = (unsigned int) 0x00000001;	/* at */
@@ -202,40 +237,43 @@ static void _rt_scheduler_stack_check(struct rt_thread *thread)
 			extern long list_thread(void);
 			list_thread();
 		}
-		//level = rt_hw_interrupt_disable();
-		//while(1);
+		level = rt_hw_interrupt_disable();
+		while(1)
+			printf("shutdown._rt_scheduler_stack_check.\n");
 	}
 }
 
 long rt_timer_stop(rt_timer_t timer)
 {
     register long level;
+    level = rt_hw_interrupt_disable();
 
     if (!(timer->flag & RT_TIMER_FLAG_ACTIVATED))
-        return -RT_ERROR;
+    {
+		//printf("rt_timer_stop error,rt_current_thread->name:%s\n",rt_current_thread->name);
+		rt_hw_interrupt_enable(level);
+		return -RT_ERROR;
+    }
 
 
     /* disable interrupt */
-    level = rt_hw_interrupt_disable();
 
     //_rt_timer_remove(timer);
-    rt_list_remove(&rt_timer_list);
+    rt_list_remove(&timer->timelist);
 
-    /* enable interrupt */
-    rt_hw_interrupt_enable(level);
 
     /* change stat */
     timer->flag = RT_TIMER_FLAG_NO_ACTIVATED;
+    /* enable interrupt */
+    rt_hw_interrupt_enable(level);
 
     return RT_EOK;
 }
 
-void rt_thread_exit(void)//线程结束需要做的事情
+void rt_thread_exit(void)//线程结束需要做的事情 这个退出有bug 头疼 但是大部分时候是好用的
 {
     register long temp = rt_hw_interrupt_disable();
 	struct rt_thread *curThread=rt_current_thread;
-	
-	printf("rt_thread_exit:%s\n",curThread->name);
 	
 	curThread->statu=RT_THREAD_CLOSE;
 	
@@ -243,8 +281,12 @@ void rt_thread_exit(void)//线程结束需要做的事情
 	
 	rt_schedule_remove_thread(curThread);
 	
-	rt_list_insert_after(&rt_thread_defunct, &(curThread->tlist));
+	rt_list_insert_after(&rt_thread_dead, &(curThread->tlist));
 	
+	//rt_current_thread->remaining_tick=1;
+	
+	//printf("rt_thread_exit:%s\n",curThread->name);
+	//list_thread();
 	rt_hw_interrupt_enable(temp);
 	rt_schedule();
 }
@@ -254,7 +296,19 @@ struct rt_thread *rt_thread_self(void)
 	return rt_current_thread;
 }
 
-void rt_schedule_insert_thread(struct rt_thread *thread)
+void show_rt_current_thread_remain_tick(void)
+{
+	printf("%s,pro:%d,remaining_tick:%d.\n",rt_current_thread->name,rt_current_thread->current_priority,rt_current_thread->remaining_tick);
+}
+
+/*
+ * This function will insert a thread to system ready queue. The state of
+ * thread will be set as READY and remove from suspend queue.
+ *
+ * @param thread the thread to be inserted
+ * @note Please do not invoke this function in user application.
+ */
+ void rt_schedule_insert_thread(struct rt_thread *thread)
 {
     register long temp = rt_hw_interrupt_disable();
 
@@ -262,6 +316,7 @@ void rt_schedule_insert_thread(struct rt_thread *thread)
     if (thread == rt_current_thread)
     {
         thread->statu = RT_THREAD_RUNNING;
+		rt_hw_interrupt_enable(temp);
         return;
     }
 
@@ -279,10 +334,7 @@ void rt_schedule_insert_thread(struct rt_thread *thread)
 
 void rt_schedule_remove_thread(struct rt_thread *thread)
 {
-	register long level;
-
-	/* disable interrupt */
-	level = rt_hw_interrupt_disable();
+	register long level= rt_hw_interrupt_disable();
 
 	/* remove thread from ready list */
 	rt_list_remove(&(thread->tlist));
@@ -358,7 +410,7 @@ void rt_thread_timeout(void *parameter)//线程timer超时操作 在rt_timer_che
     rt_schedule_insert_thread(thread);
 
     /* do schedule */
-    //rt_schedule();//rtthread里面有一次调度
+    rt_schedule();//rtthread里面有一次调度
 }
 
 void rt_timer_check(void)//定时器超时检测
@@ -388,21 +440,36 @@ void rt_timer_check(void)//定时器超时检测
 }
 
 unsigned int counterS=0;
+unsigned int schedule_printfFlagFront=0;
+unsigned int schedule_printfFlag=0;
+unsigned int schedule_printfCounter=0;
+#define SCHEDULE_PRINTF_FLAG 2
 void rt_schedule(void)
 {
 	counterS++;
-	register long level = rt_hw_interrupt_disable();
-	//printf("rt_schedule:0x%08x\n",level);
+	long level = rt_hw_interrupt_disable();
 	struct rt_thread *to_thread;
     struct rt_thread *from_thread=rt_current_thread;
 	unsigned long highest_ready_priority;
+	
+	if(strcmp(from_thread->name,"tftpThread")==0&&from_thread->statu==RT_THREAD_CLOSE&&0||schedule_printfFlagFront==SCHEDULE_PRINTF_FLAG)
+		schedule_printfFlag=SCHEDULE_PRINTF_FLAG;
+	if(schedule_printfFlag==SCHEDULE_PRINTF_FLAG)
+		printf("rt_current_thread statu:%d\n",from_thread->statu);
+	
 	if (rt_thread_ready_priority_group != 0)
 	{
 		to_thread = _get_highest_priority_thread(&highest_ready_priority);
-		//printf("from:%s,to:%s\n",from_thread->name,to_thread->name);
-		//printf("from_thread:%s,tick:%d,to_thread:%s,tick:%d,current statu:0x%08X.\n",from_thread->name,
-		//	from_thread->remaining_tick,to_thread->name,to_thread->remaining_tick,rt_current_thread->statu);
-		
+		if(schedule_printfFlag==SCHEDULE_PRINTF_FLAG)
+		{
+			printf("schedule from:%s,to:%s\n",from_thread->name,to_thread->name);
+			list_thread();
+		}
+		//list_thread();
+		if(to_thread->statu==RT_THREAD_CLOSE)
+		{
+			printf("wow bug\n");
+		}
 		if (to_thread != rt_current_thread)//找到了与当前线程不一样的任务 
 		{
 			rt_current_priority = (unsigned char)highest_ready_priority;
@@ -411,90 +478,83 @@ void rt_schedule(void)
 			to_thread->statu = RT_THREAD_RUNNING;
 			if(from_thread->statu!=RT_THREAD_CLOSE&&from_thread->statu!=RT_THREAD_SLEEP&&from_thread->statu!=RT_THREAD_SUSPEND)//不在休眠状态,不是死亡线程 重新插入准备链表
 				rt_schedule_insert_thread(from_thread);//将当前正在运行的线程重新插入准备线程中 以便下次可运行
-			//printf("1:%d\n",counterS);
 			rt_schedule_remove_thread(to_thread);//准备执行新线程 将其从可运行链表中移除
-			//printf("2:%d\n",counterS);
-			/*
-			if(from_thread->statu==RT_THREAD_CLOSE)
 			{
-				printf("RT_THREAD_CLOSE threadName:%s\n",from_thread->name);
-				rt_hw_context_switch_to((unsigned long)&to_thread->sp);//切换运行第一优先级程序 永不回头
-				return;
-			}
-			else*/
-			{
-				//printf("3:%d\n",counterS);
-				//printf("from %s sp:0x%08x,to %s sp:0x%08x,nest:%d\n",from_thread->name,from_thread->sp,to_thread->name,to_thread->sp,rt_interrupt_nest);
 				_rt_scheduler_stack_check(to_thread);
-				//printf("4:%d\n",counterS);
 				/*
-                printf("[%d]switch to priority#%d "
-                         "thread:%.*s(sp:0x%08x), "
-                         "from thread:%.*s(sp: 0x%08x)\n",
-                         0, highest_ready_priority,
-                         RT_NAME_MAX, to_thread->name, to_thread->sp,
-                         RT_NAME_MAX, from_thread->name, from_thread->sp);
-				*/
-				if(rt_interrupt_nest==0)
+				if(from_thread->statu==RT_THREAD_CLOSE)
+				{
+					printf("rt_hw_context_switch_to schedule from:%s,to:%s\n",from_thread->name,to_thread->name);
+					rt_hw_context_switch_to((unsigned long)&to_thread->sp);
+					rt_hw_interrupt_enable(level);
+					return;
+				}
+				else //*/
+					if(rt_interrupt_nest==0)
+				{
+					if(schedule_printfFlag==SCHEDULE_PRINTF_FLAG)
+						printf("@rt_interrupt_nest=0.");
 					rt_hw_context_switch((unsigned long)&from_thread->sp,(unsigned long)&to_thread->sp);
+					rt_hw_interrupt_enable(level);
+					return;
+				}
 				else
+				{
+					if(schedule_printfFlag==SCHEDULE_PRINTF_FLAG)
+						printf("&rt_interrupt_nest=1.",rt_interrupt_nest);
 					rt_hw_context_switch_interrupt((unsigned long)&from_thread->sp,(unsigned long)&to_thread->sp);
-				//printf("4:%d\n",counterS);
+				}
 			}
 		}
 		else//在准备运行链表中找到的新线程 竟然还在运行 必须将其移除 否则别人永远没有机会运行了
 		{
+			printf("still in read list:%s\n",rt_current_thread->name);
+			while(1)
+				printf("#");
 			//rt_schedule_remove_thread(rt_current_thread);
 			//rt_current_thread->statu = RT_THREAD_RUNNING | (rt_current_thread->statu & ~RT_THREAD_STAT_MASK);
 		}
 	}
 	rt_hw_interrupt_enable(level);
-	
-	//printf("rt_schedule:0x%08x  2\n",level);
 }
 
 void threadTask(void)
 {
 	register long level = rt_hw_interrupt_disable();
 	scheduleCounterFlag++;
-	//if(threadStartFlag==0)
 	if(rt_current_thread==NULL)//thread系统调度未start
 	{
 		rt_hw_interrupt_enable(level);
 		return;
 	}
+	if(schedule_printfFlag==SCHEDULE_PRINTF_FLAG)
+	{
+		schedule_printfCounter++;
+		if(schedule_printfCounter>1000)
+		{
+			schedule_printfFlag=0;
+			schedule_printfCounter=0;
+		}
+
+	}
+	if(schedule_printfFlag==SCHEDULE_PRINTF_FLAG)
+		printf("threadTask running:%d,%s\n",schedule_printfCounter,rt_current_thread->name);
 	
-	rt_current_thread->remaining_tick--;
+	--rt_current_thread->remaining_tick;
 	if(rt_current_thread->remaining_tick==0)//当前运行线程tick用完了
 	{	
 		rt_current_thread->remaining_tick=rt_current_thread->init_tick;//重新赋值
 		rt_schedule();//执行一次调度
 	}
 	
-	rt_timer_check();
 	
 	rt_hw_interrupt_enable(level);
-}
-
-int thread_start(void)
-{
-	unsigned long priorityint;
-	struct rt_thread *to_thread=_get_highest_priority_thread(&priorityint);
-	printf("thread_start priorityint:%d,name:%s\n",priorityint,to_thread->name);
-	rt_current_thread = to_thread;
-
-	rt_schedule_remove_thread(to_thread);//从当前优先级的链表中移除
-	to_thread->statu=RT_THREAD_RUNNING;
-	
-	//threadStartFlag=1;
-	rt_hw_context_switch_to((unsigned long)&to_thread->sp);//切换运行第一优先级程序 永不回头
-
-	return 0;
 }
 
 long rt_thread_suspend(rt_thread_t thread,char statu)//挂起线程
 {
     register long stat;
+    register long temp = rt_hw_interrupt_disable();
     /* thread check */
     stat = thread->statu;
     if ((stat != RT_THREAD_READY) && (stat != RT_THREAD_RUNNING))
@@ -510,6 +570,7 @@ long rt_thread_suspend(rt_thread_t thread,char statu)//挂起线程
 	
 	rt_timer_stop(&(thread->thread_timer));//停止定时器
 	
+    rt_hw_interrupt_enable(temp);
     return RT_EOK;
 }
 
@@ -534,11 +595,11 @@ long rt_thread_resume(rt_thread_t thread)//唤醒线程
 
     rt_timer_stop(&thread->thread_timer);
 
-    /* enable interrupt */
-    rt_hw_interrupt_enable(temp);
-
     /* insert to schedule ready list */
     rt_schedule_insert_thread(thread);
+	
+    /* enable interrupt */
+    rt_hw_interrupt_enable(temp);
 
     //RT_OBJECT_HOOK_CALL(rt_thread_resume_hook, (thread));
     return RT_EOK;
@@ -561,6 +622,29 @@ long rt_thread_sleep(unsigned int tick)
 	rt_schedule();
     return 0;
 }
+
+//之所这么做，主要是当线程函数正常退出进入rt_thread_exit时，会出bug，原因不明
+//在线程函数退出之前调用下THREAD_DEAD_SLEEP，然后由idle线程去清理掉它
+long rt_thread_dead_exit(void)
+{
+    register long temp = rt_hw_interrupt_disable();
+	struct rt_thread *curThread=rt_current_thread;
+	if(curThread->statu!=RT_THREAD_CLOSE)
+	{
+		curThread->statu=RT_THREAD_CLOSE;
+		
+		rt_timer_stop(&(curThread->thread_timer));
+		
+		rt_schedule_remove_thread(curThread);
+		
+		rt_list_insert_after(&rt_thread_dead, &(curThread->tlist));
+		
+	}
+	rt_hw_interrupt_enable(temp);
+	rt_schedule();
+    return 0;
+}
+
 
 long  rt_thread_delay(unsigned int tick)
 {
@@ -586,7 +670,6 @@ rt_thread_t thread_join_init(char* thread_name,void (*fun)(void *userdata),void 
 		printf("!!!Creat thread mem ERROR.\n");
 		return NULL;
 	}
-	printf("thread_join_init thread name:%s,newThread addr:0x%08X\n",thread_name,newThread);
 	memset(newThread,0,sizeof(struct rt_thread));
 
 	if(stackSize==0)
@@ -603,7 +686,6 @@ rt_thread_t thread_join_init(char* thread_name,void (*fun)(void *userdata),void 
 		free(newThread);
 		return NULL;
 	}
-	printf("thread_join_init stackSize:%d,stack addr:0x%08x\n",stackSize,newThread->stack_addr);
 	memset(newThread->stack_addr,'#',newThread->stack_size);//格式化成#
 
 	int nameLen=strlen(thread_name);
@@ -635,61 +717,53 @@ rt_thread_t thread_join_init(char* thread_name,void (*fun)(void *userdata),void 
 	rt_thread_ready_priority_group |= newThread->number_mask;
     rt_list_insert_before(&(rt_thread_priority_table[newThread->current_priority]),&(newThread->tlist));
 	
+	//printf("thread_join_init thread name:%s,newThread addr:0x%08X,stack addr:0x%08x,stackSize:%d\n",thread_name,newThread,newThread->stack_addr,stackSize);
 	if(rt_current_thread!=NULL)//说明此时线程已经运作
 		rt_hw_interrupt_enable(level);
-	
 	return newThread;
 }
 
-rt_thread_t find_thread_by_id(unsigned int id)
-{
-	struct rt_thread *thread;
-	rt_list_for_each_entry(thread,&rt_all_thread,allList)
-	{
-		if(thread!=NULL&&thread->id==id)
-			return thread;
-	}
-	return NULL;
-}
-
-
 void idle_thread(void*userdata)//空闲线程 做一些死掉的线程清理工作
 {
-	//int count=10000;
+	//int count=0;
+	struct rt_thread *dead_thread,*posTmp;
 	while(1)
 	{
-		register long temp= rt_hw_interrupt_disable();
 		//printf("idle_thread:%d\n",count);
-		//count++;
-		struct rt_thread *dead_thread,*posTmp;
-		if (!rt_list_isempty(&rt_thread_defunct))
-		rt_list_for_each_entry_safe(dead_thread,posTmp,&rt_thread_defunct,tlist)
+		//count++;//给他做点事情，不然不知道为什么不工作,可能被编译器优化掉啦？
+		//printf("idle_thread in1.\n");
+		if (!rt_list_isempty(&rt_thread_dead))
 		{
-			printf("idle_thread clean closed thread, name:%s\n",dead_thread->name);
+			//printf("idle_thread in2,%d.\n",count);
 			///*
-			rt_list_remove(&(dead_thread->tlist));
-			rt_list_remove(&(dead_thread->allList));
-			if(dead_thread->statu==RT_THREAD_CLOSE)//死亡线程
+			register long temp= rt_hw_interrupt_disable();
+			rt_list_for_each_entry_safe(dead_thread,posTmp,&rt_thread_dead,tlist)
 			{
-				free(dead_thread->stack_addr);
-				free(dead_thread);
+				//printf("idle_thread clean closed thread, name:%s\n",dead_thread->name);
+				rt_list_remove(&(dead_thread->tlist));
+				rt_list_remove(&(dead_thread->allList));
+				if(dead_thread->statu==RT_THREAD_CLOSE)//死亡线程
+				{
+					free(dead_thread->stack_addr);
+					free(dead_thread);
+				}
 			}
+			rt_hw_interrupt_enable(temp);
 			//*/
 		}
-		rt_hw_interrupt_enable(temp);
-		//rt_thread_delay(1000);//不要增加延时，否则系统将无线程可以调度了
+		else 
+			rt_thread_delay(1000);
 	}
 }
 
 int thread_init(void)
 {
-
 	int offset=0;
     for (offset = 0; offset < RT_THREAD_PRIORITY_MAX; offset ++)
     {
         rt_list_init(&rt_thread_priority_table[offset]);
     }
-	rt_list_init(&rt_thread_defunct);
+	rt_list_init(&rt_thread_dead);
 
 	rt_list_init(&rt_all_thread);
 	
@@ -697,7 +771,20 @@ int thread_init(void)
 
 	rt_thread_ready_priority_group=0;
 	
-	thread_join_init("idle_thread",idle_thread,NULL,4096,RT_THREAD_PRIORITY_MAX-1,20);//至少加入一个空闲线程，系统管理用 给它倒数第1的优先级
+	return 0;
+}
+
+int thread_start(void)
+{
+	unsigned long priorityint;
+	struct rt_thread *to_thread=_get_highest_priority_thread(&priorityint);
+	rt_current_thread = to_thread;
+	rt_schedule_remove_thread(to_thread);//从当前优先级的链表中移除
+	to_thread->statu=RT_THREAD_RUNNING;
+	
+	//printf("thread_start priorityint:%d,name:%s\n",priorityint,to_thread->name);
+	printf(FINSH_PROMPT);
+	rt_hw_context_switch_to((unsigned long)&to_thread->sp);//切换运行第一优先级程序 永不回头
 	return 0;
 }
 
@@ -822,6 +909,10 @@ long rt_sem_take(rt_sem_t sem, int time)
         }
         else//挂起操作
         {
+            /* current context checking */
+            RT_DEBUG_IN_THREAD_CONTEXT;
+			//RT_DEBUG_NOT_IN_INTERRUPT;
+			
 			struct rt_thread *thread = rt_thread_self();
 			if(thread==NULL)
 			{
@@ -872,14 +963,9 @@ long rt_sem_release(rt_sem_t sem)
 		struct rt_thread *thread;
 		/* get thread entry */
 		thread = rt_list_entry(sem->suspend_thread_list.next, struct rt_thread, tlist);
-		/* resume it */
-		rt_list_remove(&(thread->tlist));//从该信号量被挂起的线程链表中唤起一个线程
+
+		rt_thread_resume(thread);
 		
-		rt_timer_stop(&thread->thread_timer);
-		
-		/* insert to schedule ready list */
-		rt_schedule_insert_thread(thread);
-			
         need_schedule = 1;
     }
     else//没有被挂起的线程 +1
@@ -952,7 +1038,7 @@ rt_mailbox_t rt_mb_create(const char *name, unsigned int size, unsigned char fla
 {
     rt_mailbox_t mb;
 
-    //RT_DEBUG_NOT_IN_INTERRUPT;
+    RT_DEBUG_NOT_IN_INTERRUPT;
 
     /* allocate object */
     mb = (rt_mailbox_t)malloc(sizeof(struct rt_mailbox));
@@ -987,7 +1073,7 @@ rt_mailbox_t rt_mb_create(const char *name, unsigned int size, unsigned char fla
 
 long rt_mb_delete(rt_mailbox_t mb)
 {
-    //RT_DEBUG_NOT_IN_INTERRUPT;
+    RT_DEBUG_NOT_IN_INTERRUPT;
 
     /* parameter check */
     RT_ASSERT(mb != RT_NULL);
@@ -1012,6 +1098,7 @@ long rt_mb_delete(rt_mailbox_t mb)
 
     /* delete mailbox object */
    // rt_object_delete(&(mb->parent.parent));
+	free(mb);
 
     return RT_EOK;
 }
@@ -1045,14 +1132,16 @@ long rt_mb_send_wait(rt_mailbox_t mb,unsigned long value,int timeout)
     if (mb->entry == mb->size && timeout == 0)
     {
         rt_hw_interrupt_enable(temp);
-
-        return -RT_EFULL;
+		//printf("%s,%s,%d\n",__FILE__ , __func__, __LINE__);
+        //show_rt_current_thread_remain_tick();
+		return -RT_EFULL;
     }
 
     /* mailbox is full */
     while (mb->entry == mb->size)
     {
-        /* reset error number in thread */
+		printf("%s,%s,%d\n",__FILE__ , __func__, __LINE__);
+		/* reset error number in thread */
         thread->error = RT_EOK;
 
         /* no waiting, return timeout */
@@ -1060,11 +1149,11 @@ long rt_mb_send_wait(rt_mailbox_t mb,unsigned long value,int timeout)
         {
             /* enable interrupt */
             rt_hw_interrupt_enable(temp);
-
+			printf("%s,%s,%d\n",__FILE__ , __func__, __LINE__);
             return -RT_EFULL;
         }
 
-        //RT_DEBUG_IN_THREAD_CONTEXT;
+        RT_DEBUG_IN_THREAD_CONTEXT;
         /* suspend current thread */
         //rt_ipc_list_suspend(&(mb->suspend_sender_thread),
         //                    thread,
@@ -1104,6 +1193,7 @@ long rt_mb_send_wait(rt_mailbox_t mb,unsigned long value,int timeout)
         if (thread->error != RT_EOK)
         {
             /* return error */
+			printf("%s,%s,%d\n",__FILE__ , __func__, __LINE__);
             return thread->error;
         }
 
@@ -1208,7 +1298,7 @@ long rt_mb_recv(rt_mailbox_t mb, unsigned long *value, unsigned int timeout)
             return -RT_ETIMEOUT;
         }
 
-        //RT_DEBUG_IN_THREAD_CONTEXT;
+        RT_DEBUG_IN_THREAD_CONTEXT;
         /* suspend current thread */
         //rt_ipc_list_suspend(&(mb->parent.suspend_thread),
         //                    thread,
@@ -1308,7 +1398,6 @@ long rt_mb_recv(rt_mailbox_t mb, unsigned long *value, unsigned int timeout)
 
 
 //=================================cmd===========================================
-#include "shell.h"
 
 #define LIST_FIND_OBJ_NR 8
 typedef struct
@@ -1379,7 +1468,7 @@ long list_thread(void)
 		sprintf(stackUsedChar,"%02d%%",(thread->stack_size - ((unsigned long) ptr - (unsigned long) thread->stack_addr)) * 100/ thread->stack_size);
 		printf("%-*.*s ",8,8,stackUsedChar);
 		
-		sprintf(remainTickChar,"0x%08x",thread->remaining_tick);
+		sprintf(remainTickChar,"%04d(%04d)",thread->remaining_tick,thread->init_tick);
 		printf("%-*.*s ",10,10,remainTickChar);
 		
 		sprintf(errorChar,"%03d",thread->error);
@@ -1411,6 +1500,77 @@ int ps_thread(void)
 	}
 }
 
+
+void list_deadthread(void)
+{
+	struct rt_thread *dead_thread;
+	if (!rt_list_isempty(&rt_thread_dead))
+	rt_list_for_each_entry(dead_thread,&rt_thread_dead,tlist)
+	{
+		printf("priority:%d,thread name:%s\n",dead_thread->current_priority,dead_thread->name);
+	}
+}
+FINSH_FUNCTION_EXPORT(list_deadthread,list_deadthread in sys);
+
+rt_thread_t find_thread_by_id(unsigned int id)
+{
+	struct rt_thread *thread;
+	rt_list_for_each_entry(thread,&rt_all_thread,allList)
+	{
+		if(thread!=NULL&&thread->id==id)
+			return thread;
+	}
+	return NULL;
+}
+
+
+
+void killThreadFun(int id)
+{
+	register long temp = rt_hw_interrupt_disable();
+	struct rt_thread *thread=find_thread_by_id(id);
+	if(thread==NULL)
+	{
+		printf("kill thread is not exist.\n");
+		rt_hw_interrupt_enable(temp);
+		return;
+	}
+	if(!striequ("idle", thread->name)&&!striequ("shell", thread->name))
+	{
+		
+		printf("kill thread:%s\n",thread->name);
+		
+		thread->statu=RT_THREAD_CLOSE;
+		
+		rt_timer_stop(&(thread->thread_timer));
+		
+		rt_schedule_remove_thread(thread);
+		
+		rt_list_insert_after(&rt_thread_dead, &(thread->tlist));
+		
+		if(thread==rt_current_thread)
+		{
+			printf("kill running thread.\n");
+			rt_schedule();
+		}
+	}
+	else
+		printf("%s can not be killed.\n", thread->name);
+	rt_hw_interrupt_enable(temp);
+	
+}
+
+void kill(int argc,char **argv)
+{
+	if(argc!=2)
+	{
+		printf("useage: kill id\n");
+		return;
+	}
+	int id=atoi(argv[1]);
+	killThreadFun(id);
+}
+FINSH_FUNCTION_EXPORT(kill,kill one thread in sys by id);
 
 
 

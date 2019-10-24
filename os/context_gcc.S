@@ -14,57 +14,57 @@
 #ifndef __ASSEMBLY__
 #define __ASSEMBLY__
 #endif
-/*
-#include "ls1c_regdef.h"
-#include "ls1c_mipsregs.h"
-#include "ls1c_asm.h"
-#include "ls1c_stackframe.h"
-#include "ls1c_cacheops.h"
-#include "ls1c_regs.h"
-#include "start.h"
-#include "cpu.h"
-*/
-
 
 #include "mips_def.h"
 #include "stackframe.h"
 #include "stackframe_fpu.h"
 
 //extern unsigned long stack;
-#define SYSTEM_STACK          stack//(start - 0x4000)		/* the kernel system stack address */
+#define SYSTEM_STACK          (stack)//(start - 0x4000)		/* the kernel system stack address */
+
+	.set	noreorder
+	.data
+	.global LOAD_THREAD_STACK	//load elf调用的stack地址
+	.common LOAD_THREAD_STACK, 128*8
+	
+	.data
+	.global LOAD_THREAD			//load elf使用的thread地址
+	.common LOAD_THREAD, 128*8
+
+
+
 
     .section ".text", "ax"
     .set noreorder
     .set	mips32r2
-
-///*
-//
-// rt_base_t rt_hw_interrupt_disable()
-//
+/*
+ * rt_base_t rt_hw_interrupt_disable()
+ */
     .globl rt_hw_interrupt_disable
 rt_hw_interrupt_disable:
-    mfc0    v0, CP0_STATUS
-    and     v1, v0, 0xfffffffe
+    mfc0    v0, CP0_STATUS		//读取状态
+    and     v1, v0, 0xfffffffe//禁止中断即0位置0
     mtc0    v1, CP0_STATUS
     jr      ra
     nop
-//
-// void rt_hw_interrupt_enable(rt_base_t level)
-//
+
+/*
+ * void rt_hw_interrupt_enable(rt_base_t level)
+ */
     .globl rt_hw_interrupt_enable
 rt_hw_interrupt_enable:
-    ori     a0, 0x00000800   
+	//0~11 11位强制置1？？ IP3  
+	//是否应该是0x00008000 IP7 tick中断??
+    ori     a0, 0x00008000   	
     mtc0    a0, CP0_STATUS
     ehb
     mfc0    v0, CP0_CAUSE
     ehb
-    or      v1, v0, 0x800000                 //EBASE + 0x200                                                                                                 
+    or      v1, v0, 0x800000                 //EBASE + 0x200 //23位 IV 该位写入1 表示中断将使用一个特殊的异常入口点                                                                                                
     mtc0    v1, CP0_CAUSE
     ehb
     jr      ra
     nop
-//*/
-
 
 /*
  * void rt_hw_context_switch(rt_uint32 from, rt_uint32 to)
@@ -122,9 +122,11 @@ _reswitch:
  */
     .globl rt_interrupt_enter
     .globl rt_interrupt_leave
-    .globl handle_int//mips_irq_handle
+    //.globl mips_irq_handle
 //mips_irq_handle:
+    .globl handle_int
 handle_int:
+
 
     SAVE_ALL
     SAVE_FPU
@@ -137,7 +139,14 @@ handle_int:
 	/* let k0 keep the current context sp */
     move    k0, sp 
     /* switch to kernel stack */
-    la      sp, SYSTEM_STACK//在start.S中定义
+	
+    //li      sp, SYSTEM_STACK
+    
+    //la      sp, SYSTEM_STACK
+	
+    la      t0, SYSTEM_STACK
+    sw		sp,0(t0)
+
 
     jal     rt_interrupt_enter
     nop
@@ -180,26 +189,3 @@ spurious_interrupt:
     RESTORE_ALL_AND_RET
 
     .set reorder
-
-
-
-//=========================================
-/*	
-	.globl  cp0_get_status
-cp0_get_status:
-	mfc0	v0, CP0_STATUS
-	jr	ra
-	nop
-
-	.globl	cp0_get_lo
-cp0_get_lo:
-	mflo	v0
-	jr	ra
-	nop
-	
-	.globl	cp0_get_hi
-cp0_get_hi:
-	mfhi	v0
-	jr	ra
-	nop
-*/	

@@ -176,12 +176,13 @@ void uart_putc(ls1c_uart_t uartx, unsigned char ch)
  * @uartx 串口号
  * @str 待打印的字符串
  */
-void uart_print(ls1c_uart_t uartx, const char *str)
+void uart_print(ls1c_uart_t uartx, const char *str,unsigned int len)
 {
-    while ('\0' != *str)                // 判断是否为字符串结束符
+    while ('\0' != *str)                // 判断是否为字符串结束符,'\0' != *str len>0
     {
         uart_putc(uartx, *str);   // 发送一个字符
         str++;
+		len--;
     }
 
     return ;
@@ -216,7 +217,7 @@ void uart2_init(void)
  */
 void uart2_print(const char *str)
 {
-    uart_print(LS1C_UART2, str);
+    uart_print(LS1C_UART2, str,strlen(str));
     return ;
 }
 
@@ -225,9 +226,9 @@ void uart2_print(const char *str)
  * 在调试串口打印字符串
  * @str 待打印的字符串
  */
-void uart_debug_print(const char *str)
+void uart_debug_print(const char *str,unsigned int len)
 {
-    uart_print(debug_uart_info.UARTx, str);
+    uart_print(debug_uart_info.UARTx, str,len);
     return ;
 }
 

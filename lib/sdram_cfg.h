@@ -39,7 +39,7 @@
 #define	CFG_VALID	0x1
 
 
-#if 1
+#if 0
 // 白菜板8MB
 /*
     以型号为IS42S16400的SDRAM为例，

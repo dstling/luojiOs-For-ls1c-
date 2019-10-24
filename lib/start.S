@@ -110,7 +110,7 @@ start:
     mips架构堆栈寄存器实际只是通用寄存器，并没有规定生长方向，但软件约定“堆栈指针向下生长”
     */
 	.globl	stack
-stack = start - 0x4000		/* Place PMON stack below PMON start in RAM */
+stack = (start - 0x4000)		/* Place PMON stack below PMON start in RAM */
 
 /* NOTE!! Not more that 16 instructions here!!! Right now it's FULL! */
 /*
@@ -318,7 +318,7 @@ locate:
 	li a0, 0
 	bal	initserial          // 初始化串口
 	nop
-	PRINTSTR("\r\asm uart2 init ok!\r\n");  // 打印一条提示信息，表示串口初始化成功了
+	PRINTSTR("\r\n\r\n--------------luojiOs start--------------\r\nasm uart2 init ok!\r\n");  // 打印一条提示信息，表示串口初始化成功了
 
 	/* 芯片上电默认使用gpio(输入模式）但大多时候是使用模块的功能，如lcd i2c spi ac97等
 	   所以这里把gpio都关闭，方便使用模块功能。如果上电后需要gpio输出一个确定电平，

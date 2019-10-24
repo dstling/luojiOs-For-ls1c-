@@ -103,9 +103,9 @@ void  memp_init(void);
 void *memp_malloc_fn(memp_t type, const char* file, const int line);
 #define memp_malloc(t) memp_malloc_fn((t), __FILE__, __LINE__)
 #else
-void *memp_malloc(memp_t type);
+//void *memp_malloc(memp_t type);
 #endif
-void  memp_free(memp_t type, void *mem);
+//void  memp_free(memp_t type, void *mem);
 
 #endif /* MEMP_MEM_MALLOC */
 

@@ -1,8 +1,8 @@
 
 #define FINSH_PROMPT     "MSH> "
 
-#define FINSH_HISTORY_LINES 5
-#define FINSH_CMD_SIZE 80
+#define FINSH_HISTORY_LINES 15//cmd历史最大记录数量
+#define FINSH_CMD_SIZE 80//一条指令的最大长度
 
 enum input_stat
 {
@@ -21,13 +21,13 @@ struct finsh_shell
     unsigned char prompt_mode: 1;
 
     unsigned short current_history;
-    unsigned short history_count;
+    unsigned short history_count;//历史cmd计数
 
     char cmd_history[FINSH_HISTORY_LINES][FINSH_CMD_SIZE];
 
-    char line[FINSH_CMD_SIZE];
-    unsigned char line_position;
-    unsigned char line_curpos;
+    char line[FINSH_CMD_SIZE];		//当前输入的cmd行保存
+    unsigned char line_char_counter;//当前行字符总长度
+    unsigned char line_curpos;		//当前行光标目前所在位置
 
 };
 

@@ -33,6 +33,7 @@
 
 //#include <stdlib.h>
 #include <stdio.h> /* sprintf() for task names */
+//#include <rtdef.h> /
 #include <lwip/opt.h>
 #include <lwip/arch.h>
 #include <lwip/stats.h>
@@ -46,12 +47,6 @@
 #include <ethernetif.h>
 
 #include <lwip/netifapi.h>
-
-
-//#include <raw_api.h>
-
-//#include <memary.h>
-
 /******************************************************************************/
 /*
  * port_malloc port_free是为了自己管理内存所用函数，非LwIP移植必须
@@ -87,13 +82,10 @@ unsigned char __attribute__((aligned(4))) __lwip_heap[MEM_SIZE];
 //static int msg_fake_null;
 
 extern struct eth_device  this_eth_dev;
-
-
-static err_t netif_device_init(struct netif *netif)
+static err_t netif_device_init(struct netif *netif)// 被tcpip_init_done_callback调用 在lwip tcpip thread中被调用 
 {
     ///*
     struct eth_device *ethif;
-
     ethif = (struct eth_device *)netif->state;
     if (ethif != RT_NULL)
     {
@@ -101,20 +93,16 @@ static err_t netif_device_init(struct netif *netif)
         // get device object 
         //device = (rt_device_t) ethif;
         //if (rt_device_init(device) != RT_EOK)//设备初始化 在synMain中定义 eth_init();
-		if(eth_init()!= RT_EOK)
+		if(init_eth()!= RT_EOK)
 		{
             return ERR_IF;
         }
-
         // copy device flags to netif flags 
         netif->flags = ethif->flags;
-
         return ERR_OK;
     }
-
     return ERR_IF;
 	//*/
-	return ERR_OK;
 }
 
 /*
@@ -124,7 +112,6 @@ void assert_printf(char *msg, int line, char *file)
 {
 	printf("%s,%d,%s\n",msg,line,file);
 }
-
 
 static void tcpip_init_done_callback(void *arg)
 {
@@ -228,7 +215,7 @@ int lwip_system_init(void)
 
 u32_t sys_now()
 {
-	return sys_tick_get();
+	return sys_tick_get()* (1000 / RT_TICK_PER_SECOND);
 }
 
 //register long globle_level ;
@@ -344,7 +331,7 @@ void sys_sem_signal(sys_sem_t *sem)
 
 sys_thread_t sys_thread_new(const char *name, lwip_thread_fn function, void *arg, int stacksize, int prio)
 {
-    return thread_join_init(name, function, arg, stacksize, prio, 1000);//tick=20
+    return thread_join_init(name, function, arg, stacksize, prio, 20);//tick=20
 }
 
 err_t sys_mbox_new(sys_mbox_t *mbox, int size)
@@ -354,7 +341,6 @@ err_t sys_mbox_new(sys_mbox_t *mbox, int size)
     sys_mbox_t tmpmbox;
 
     //RT_DEBUG_NOT_IN_INTERRUPT;
-
     //rt_snprintf(tname, RT_NAME_MAX, "%s%d", SYS_LWIP_MBOX_NAME, counter);
     //counter ++;
 

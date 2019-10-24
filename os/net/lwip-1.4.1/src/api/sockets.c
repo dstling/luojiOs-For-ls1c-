@@ -944,7 +944,7 @@ lwip_sendto(int s, const void *data, size_t size, int flags,
   return (err == ERR_OK ? short_size : -1);
 }
 
-int
+int			//tftp AF_INET, SOCK_DGRAM, 	0
 lwip_socket(int domain, int type, int protocol)
 {
   struct netconn *conn;
@@ -959,7 +959,7 @@ lwip_socket(int domain, int type, int protocol)
     LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_socket(%s, SOCK_RAW, %d) = ",
                                  domain == PF_INET ? "PF_INET" : "UNKNOWN", protocol));
     break;
-  case SOCK_DGRAM:
+  case SOCK_DGRAM://这里
     conn = netconn_new_with_callback( (protocol == IPPROTO_UDPLITE) ?
                  NETCONN_UDPLITE : NETCONN_UDP, event_callback);
     LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_socket(%s, SOCK_DGRAM, %d) = ",

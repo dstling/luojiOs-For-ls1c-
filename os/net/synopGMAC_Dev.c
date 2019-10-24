@@ -1189,12 +1189,9 @@ s32 synopGMAC_get_mac_addr(synopGMACdevice *gmacdev, u32 MacHigh, u32 MacLow, u8
 	MacAddr[2] = (data >> 16) & 0xff;
 	MacAddr[1] = (data >> 8 ) & 0xff;
 	MacAddr[0] = (data )      & 0xff;
-
 //	rt_kprintf("MacAddr = 0x%x\t0x%x\t0x%x\t0x%x\t0x%x\t0x%x\n",MacAddr[0],MacAddr[1],MacAddr[2],MacAddr[3],MacAddr[4],MacAddr[5]);
-
 	return 0;
 }
-
 
 /**
   * Attaches the synopGMAC device structure to the hardware.
@@ -1206,8 +1203,8 @@ s32 synopGMAC_get_mac_addr(synopGMACdevice *gmacdev, u32 MacHigh, u32 MacLow, u8
   * \return 0 upon success. Error code upon failure.
   * \note This is important function. No kernel api provided by Synopsys 
   */
-
-s32 synopGMAC_attach (synopGMACdevice * gmacdev, u32 macBase, u32 dmaBase, u32 phyBase,u8 *mac_addr)
+	//					(synopGMACadapter->synopGMACdev, (regbase + MACBASE), regbase + DMABASE, DEFAULT_PHY_BASE, mac_addr0);
+s32 synopGMAC_attach (synopGMACdevice * gmacdev, 			u32 macBase, 		u32 dmaBase, 		u32 phyBase,	u8 *mac_addr)
 {
 	/*Make sure the Device data strucure is cleared before we proceed further*/
 	rt_memset((void *) gmacdev,0,sizeof(synopGMACdevice));
@@ -1215,8 +1212,7 @@ s32 synopGMAC_attach (synopGMACdevice * gmacdev, u32 macBase, u32 dmaBase, u32 p
 	gmacdev->MacBase = macBase;
 	gmacdev->DmaBase = dmaBase;
 	gmacdev->PhyBase = phyBase;
-	TR("gmacdev->DmaBase = 0x%x\n", gmacdev->DmaBase);
-	TR("dmaBase = 0x%x\n", dmaBase);
+	TR("gmacdev->DmaBase = 0x%x,dmaBase = 0x%x\n", gmacdev->DmaBase,dmaBase);
 	{
 		int i,j;
 		u16 data;
@@ -1233,17 +1229,11 @@ s32 synopGMAC_attach (synopGMACdevice * gmacdev, u32 macBase, u32 dmaBase, u32 p
 		}
 		gmacdev->PhyBase = i;
 	}
-
-//	synopGMAC_get_mac_addr(gmacdev, GmacAddr0High, GmacAddr0Low, mac_addr);
-
+	//	synopGMAC_get_mac_addr(gmacdev, GmacAddr0High, GmacAddr0Low, mac_addr);
 	/* Program/flash in the station/IP's Mac address */
 	synopGMAC_set_mac_addr(gmacdev,GmacAddr0High,GmacAddr0Low, mac_addr); 
-
 	return 0;	
 }
-
-
-
 
 /**
   * Initialize the rx descriptors for ring or chain mode operation.
@@ -2287,6 +2277,7 @@ s32 synopGMAC_get_rx_qptr(synopGMACdevice * gmacdev, u32 * Status, u32 * Buffer1
   * @param[out] virtual pointer for buffer2.
   * \return returns present rx descriptor index on success. Negative value if error.
   */
+  //从DMA获取接收到的数据描述信息							(gmacdev, 			&status, 	&dma_addr1, 		NULL, 		&data1,		&dma_addr2, 	NULL, 			&data2);
 s32 synopGMAC_get_rx_qptr(synopGMACdevice * gmacdev, u32 * Status, u32 * Buffer1, u32 * Length1, u32 * Data1, u32 * Buffer2, u32 * Length2, u32 * Data2)
 {
 	u32 rxnext       = gmacdev->RxBusy;	// index of descriptor the DMA just completed. May be useful when data 
@@ -2325,11 +2316,13 @@ s32 synopGMAC_get_rx_qptr(synopGMACdevice * gmacdev, u32 * Status, u32 * Buffer1
 	len =  synopGMAC_get_rx_desc_frame_length(*Status);
 	DEBUG_MES("Cache sync for data buffer in rx dma desc: length = 0x%x\n",len);
 	gmacdev->RxBusy     = synopGMAC_is_last_rx_desc(gmacdev,rxdesc) ? 0 : rxnext + 1;
-	if(synopGMAC_is_rx_desc_chained(rxdesc)){
+	if(synopGMAC_is_rx_desc_chained(rxdesc))
+	{
 	   	gmacdev->RxBusyDesc = (DmaDesc *)rxdesc->data2;
 		synopGMAC_rx_desc_init_chain(rxdesc);
 	}
-	else{
+	else
+	{
 		gmacdev->RxBusyDesc = synopGMAC_is_last_rx_desc(gmacdev,rxdesc) ? gmacdev->RxDesc : (rxdesc + 1);
 //sw: raw data		
 #if SYNOP_RX_DEBUG
@@ -2343,7 +2336,6 @@ s32 synopGMAC_get_rx_qptr(synopGMACdevice * gmacdev, u32 * Status, u32 * Buffer1
 
 	(gmacdev->BusyRxDesc)--; //This returns one descriptor to processor. So busy count will be decremented by one
 	return(rxnext);
-
 }
 
 #endif

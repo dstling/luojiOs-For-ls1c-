@@ -14,7 +14,6 @@
 //#include <rthw.h>
 //#include <rtthread.h>
 
-
 #define cache_op(op,addr)                       \
 	    __asm__ __volatile__(                       \
 				    "   .set    push                    \n" \
@@ -34,7 +33,6 @@
 #define CONFIG_SYS_CACHELINE_SIZE   32
 #define Hit_Writeback_Inv_D 0x15
 
-
 void flush_cache(unsigned long start_addr, unsigned long size)
 {
 	unsigned long lsize = CONFIG_SYS_CACHELINE_SIZE;
@@ -50,17 +48,12 @@ void flush_cache(unsigned long start_addr, unsigned long size)
 	}   
 }
 
-
-
-
 extern void flush_cache(unsigned long start_addr, unsigned long size);
 dma_addr_t __attribute__((weak)) gmac_dmamap(unsigned long va,u32 size)
 {
 	return VA_TO_PA (va);
 	//return UNCACHED_TO_PHYS(va);
 }
-
-
 
 /**
   * This is a wrapper function for Memory allocation routine. In linux Kernel 
@@ -70,29 +63,23 @@ dma_addr_t __attribute__((weak)) gmac_dmamap(unsigned long va,u32 size)
 
 void *plat_alloc_memory(u32 bytes) 
 {
-//return (void*)malloc((size_t)bytes, M_DEVBUF, M_DONTWAIT);
 	void *buf = (void*)rt_malloc((u32)bytes);
-
-	flush_cache((unsigned long)buf, bytes);
+	if(buf!=0)
+		flush_cache((unsigned long)buf, bytes);
 	return buf;
 }
 
 /**
-  * This is a wrapper function for consistent dma-able Memory allocation routine. 
-  * In linux Kernel, it depends on pci dev structure
-  * @param[in] bytes in bytes to allocate
-  */
-
-//void *plat_alloc_consistent_dmaable_memory(struct synopGMACdevice *dev, u32 size, u32 *addr) 
+* This is a wrapper function for consistent dma-able Memory allocation routine. 
+* In linux Kernel, it depends on pci dev structure
+* @param[in] bytes in bytes to allocate
+*/
 void *plat_alloc_consistent_dmaable_memory(synopGMACdevice *pcidev, u32 size, u32 *addr) 
 {
-	//test_malloc();
-
 	void *buf;
 	//buf = (void*)rt_malloc((u32)(size+16));
-	buf = (void*)malloc_align(size,4096);
+	buf =malloc(size);//(void*)malloc_align(size,0x100);//malloc(size);// (void*)malloc_align(size,0x100);
 	DEBUG_MES("plat_alloc_consistent_dmaable_memory buf addr:0X%08X\n",buf);
-	
 	//CPU_IOFlushDCache( buf,size, SYNC_W);
 	unsigned long i = (unsigned long)buf;
 	//printf("size = %d\n", size);
@@ -109,13 +96,13 @@ void *plat_alloc_consistent_dmaable_memory(synopGMACdevice *pcidev, u32 size, u3
 		i += 4;
 	}
 	*/
-	flush_cache(i, size);
+	if(i!=0)
+		flush_cache(i, size);
 	*addr =gmac_dmamap(i, size);
 	buf = (unsigned char *)CACHED_TO_UNCACHED(i);
 //	rt_kprintf("bufaddr = %p\n", buf);
 	return buf;
 }
-
 
 /**
   * This is a wrapper function for freeing consistent dma-able Memory.
@@ -123,15 +110,12 @@ void *plat_alloc_consistent_dmaable_memory(synopGMACdevice *pcidev, u32 size, u3
   * @param[in] bytes in bytes to allocate
   */
 
-
 //void plat_free_consistent_dmaable_memory(void * addr) 
 void plat_free_consistent_dmaable_memory(synopGMACdevice *pcidev, u32 size, void * addr,u32 dma_addr) 
 {
 	rt_free((void*)PHYS_TO_CACHED(UNCACHED_TO_PHYS(addr)));
  return;
 }
-
-
 
 /**
   * This is a wrapper function for Memory free routine. In linux Kernel 
@@ -144,15 +128,13 @@ void plat_free_memory(void *buffer)
 	return ;
 }
 
-
-
-dma_addr_t plat_dma_map_single(void *hwdev, void *ptr,
-		                    u32 size)
+dma_addr_t plat_dma_map_single(void *hwdev, void *ptr, u32 size)
 {
-	    unsigned long addr = (unsigned long) ptr;
-//CPU_IOFlushDCache(addr,size, direction);
-	flush_cache(addr, size);
-return gmac_dmamap(addr, size);
+    unsigned long addr = (unsigned long) ptr;
+	//CPU_IOFlushDCache(addr,size, direction);
+	if(addr!=0)
+		flush_cache(addr, size);
+	return gmac_dmamap(addr, size);
 }
 
 /**

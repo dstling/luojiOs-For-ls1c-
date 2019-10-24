@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <ls1c_pin.h>
+#include <env.h>
 
 #include <rtdef.h>
 #include <ls1c_irq.h>
@@ -15,21 +16,27 @@
 
 #define rt_kprintf printf
 
-#define Gmac_base           0xbfe10000
-u32 regbase = 0xbfe10000;
 #define RMII
-
 #define RT_USING_GMAC_INT_MODE
+#define DEFAULT_MAC_ADDRESS 			{0x00, 0x55, 0x7B, 0xB5, 0x7D, 0xF7}
+#define Gmac_base           			0xbfe10000
+u32 	regbase 			=	 		Gmac_base;
 
+#define DEFAULT_IP_ADDRESS 			"192.168.1.2"//"172.0.0.13"
+#define DEFAULT_GWADDR_ADDRESS 		"192.168.1.1"//"172.0.0.1"
+#define DEFAULT_MSKADDR_ADDRESS 	"255.255.255.0"
 
-#define DEFAULT_MAC_ADDRESS {0x00, 0x55, 0x7B, 0xB5, 0x7D, 0xF7}
+//static unsigned char default_mac_addr_mem[MAX_ADDR_LEN]=DEFAULT_MAC_ADDRESS;
+static unsigned char mac_addr_mem[MAX_ADDR_LEN]=DEFAULT_MAC_ADDRESS;
 
-unsigned char default_MAC_addr[MAX_ADDR_LEN]=DEFAULT_MAC_ADDRESS;
+unsigned char ip_addr_mem[16]=DEFAULT_IP_ADDRESS;
+unsigned char gateway_addr_mem[16]=DEFAULT_GWADDR_ADDRESS;
+unsigned char mask_addr_mem[16]=DEFAULT_MSKADDR_ADDRESS;
 
 struct eth_device  this_eth_dev;
 char this_eth_dev_name[]="e0";
 static u32 GMAC_Power_down;
-static struct rt_semaphore sem_ack, sem_lock;
+static struct rt_semaphore  sem_lock;//sem_ack 这个没用吧
 
 static int mdio_read(synopGMACPciNetworkAdapter *adapter, int addr, int reg)
 {
@@ -157,13 +164,12 @@ long rt_eth_tx(struct eth_device* device, struct pbuf *p)
     return RT_EOK;
 }
 
-struct pbuf *rt_eth_rx(struct eth_device* device)
+struct pbuf *rt_eth_rx(struct eth_device* device)//被接口ethernetif.c eth_rx_thread_entry调用
 {
     DEBUG_MES("in %s, name:%s\n", __FUNCTION__,device->name);
     struct eth_device *dev = device;
     struct synopGMACNetworkAdapter *adapter;
     synopGMACdevice *gmacdev;
-//  struct PmonInet * pinetdev;
     s32 desc_index;
     int i;
     char *ptr;
@@ -192,23 +198,35 @@ struct pbuf *rt_eth_rx(struct eth_device* device)
     }
 
     /*Handle the Receive Descriptors*/
-    do
+	desc_index = synopGMAC_get_rx_qptr(gmacdev, &status, &dma_addr1, NULL, &data1, &dma_addr2, NULL, &data2);
+	//printf("%s,fun:%s,line:%d，desc_index:%d\n",__FILE__ , __func__, __LINE__,desc_index);
+    //do
+    if(desc_index >= 0 && data1 != 0)
     {
-        desc_index = synopGMAC_get_rx_qptr(gmacdev, &status, &dma_addr1, NULL, &data1, &dma_addr2, NULL, &data2);
-
-        if (desc_index >= 0 && data1 != 0)
+        //desc_index = synopGMAC_get_rx_qptr(gmacdev, &status, &dma_addr1, NULL, &data1, &dma_addr2, NULL, &data2);
+		//printf("%s,fun:%s,line:%d，desc_index:%d\n",__FILE__ , __func__, __LINE__,desc_index);
+        //if (desc_index >= 0 && data1 != 0)
         {
             DEBUG_MES("Received Data at Rx Descriptor %d for skb 0x%08x whose status is %08x\n", desc_index, dma_addr1, status);
 
             if (synopGMAC_is_rx_desc_valid(status) || SYNOP_PHY_LOOPBACK)
             {
-                pbuf = pbuf_alloc(PBUF_LINK, MAX_ETHERNET_PAYLOAD, PBUF_RAM);
-                if (pbuf == 0) printf("===error in pbuf_alloc\n");
-
-
+                pbuf = pbuf_alloc(PBUF_LINK, MAX_ETHERNET_PAYLOAD, PBUF_RAM);//内存会被用光？？内存泄露
+                if (pbuf == 0)
+                {
+					printf("===error in pbuf_alloc,%s,fun:%s,line:%d\n",__FILE__ , __func__, __LINE__);
+					//break;
+					rt_sem_release(&sem_lock);
+					return NULL;
+                }
+				/*
+				printf("dma_addr1:0x%08x\n",dma_addr1);
+                //虚拟地址转物理地址 转重复了 上面已经获取了
                 dma_addr1 =  plat_dma_map_single(gmacdev, (void *)data1, RX_BUF_SIZE);
+				printf("dma_addr1 2:0x%08x\n",dma_addr1);
+				*/
                 len =  synopGMAC_get_rx_desc_frame_length(status); //Not interested in Ethernet CRC bytes
-                memcpy(pbuf->payload, (char *)data1, len);
+                memcpy(pbuf->payload, (char *)data1, len);//从DMA中复制一个数据
                 DEBUG_MES("==get pkg len: %d\n", len);
             }
             else
@@ -225,14 +243,14 @@ struct pbuf *rt_eth_rx(struct eth_device* device)
 
             if (desc_index < 0)
             {
-    #if SYNOP_RX_DEBUG
+    #if 1//SYNOP_RX_DEBUG
                 printf("Cannot set Rx Descriptor for data1 %08x\n", (u32)data1);
     #endif
                 plat_free_memory((void *)data1);
             }
 
         }
-    }while(desc_index >= 0);
+    }//while(desc_index >= 0);
     rt_sem_release(&sem_lock);
     DEBUG_MES("%s : before return \n", __FUNCTION__);
     return pbuf;
@@ -266,30 +284,28 @@ static int rtl88e1111_config_init(synopGMACdevice *gmacdev)
     return 0;
 }
 
+//发送描述符队列												(gmacdev, TRANSMIT_DESC_SIZE=36, RINGMODE);//
 s32 synopGMAC_setup_tx_desc_queue(synopGMACdevice *gmacdev, u32 no_of_desc, u32 desc_mode)//no_of_desc=36
 {
     s32 i;
     DmaDesc *bf1;
-
     DmaDesc *first_desc = NULL;
-
     dma_addr_t dma_addr;
     gmacdev->TxDescCount = 0;
-
-	int memSize=sizeof(DmaDesc) * no_of_desc;
-	//printf("synopGMAC_setup_tx_desc_queue memSize:%d\n",memSize);
+	//每个描述符的地址需要按照总线宽度32 64 128对齐 sizeof(DmaDesc)=32?
+	int memSize=sizeof(DmaDesc) * no_of_desc;//36*
+	DEBUG_MES("synopGMAC_setup_tx_desc_queue memSize:%d,sizeof(DmaDesc):%d,no_of_desc:%d\n",memSize,sizeof(DmaDesc),no_of_desc);
     first_desc = (DmaDesc *)plat_alloc_consistent_dmaable_memory(gmacdev,memSize , &dma_addr);//36*DmaDesc
     if (first_desc == NULL)
     {
         rt_kprintf("Error in Tx Descriptors memory allocation\n");
         return -ESYNOPGMACNOMEM;
     }
+    DEBUG_MES("synopGMAC_setup_tx_desc_queue  tx_first_desc_addr= %p,dmaadr = %p\n", first_desc, dma_addr);
 
-    DEBUG_MES("tx_first_desc_addr = %p\n", first_desc);
-    DEBUG_MES("dmaadr = %p\n", dma_addr);
-    gmacdev->TxDescCount = no_of_desc;//36
+	gmacdev->TxDescCount = no_of_desc;//36
     gmacdev->TxDesc      = first_desc;
-    gmacdev->TxDescDma  = dma_addr;
+    gmacdev->TxDescDma  = dma_addr;//这个地址的对齐方式是啥？好像没有用对齐数据也没问题
 
     for (i = 0; i < gmacdev->TxDescCount; i++)//清零操作
     {
@@ -317,24 +333,25 @@ s32 synopGMAC_setup_tx_desc_queue(synopGMACdevice *gmacdev, u32 no_of_desc, u32 
     return -ESYNOPGMACNOERR;
 }
 
+//												(gmacdev, 			RECEIVE_DESC_SIZE, RINGMODE);
 s32 synopGMAC_setup_rx_desc_queue(synopGMACdevice *gmacdev, u32 no_of_desc, u32 desc_mode)
 {
     s32 i;
     DmaDesc *bf1;
     DmaDesc *first_desc = NULL;
-
     dma_addr_t dma_addr;
-
+	//每个描述符的地址需要按照总线宽度32 64 128对齐 sizeof(DmaDesc)=32?
     gmacdev->RxDescCount = 0;
-    first_desc = (DmaDesc *)plat_alloc_consistent_dmaable_memory(gmacdev, sizeof(DmaDesc) * no_of_desc, &dma_addr);
+	int memSize=sizeof(DmaDesc) * no_of_desc;
+	DEBUG_MES("synopGMAC_setup_rx_desc_queue memSize:%d,sizeof(DmaDesc):%d,no_of_desc:%d\n",memSize,sizeof(DmaDesc),no_of_desc);
+    first_desc = (DmaDesc *)plat_alloc_consistent_dmaable_memory(gmacdev, memSize, &dma_addr);
     if (first_desc == NULL)
     {
         rt_kprintf("Error in Rx Descriptor Memory allocation in Ring mode\n");
         return -ESYNOPGMACNOMEM;
     }
 
-    DEBUG_MES("rx_first_desc_addr = %p\n", first_desc);
-    DEBUG_MES("dmaadr = %p\n", dma_addr);
+    DEBUG_MES("synopGMAC_setup_rx_desc_queue rx_first_desc_addr = %p,dmaadr = %p\n", first_desc, dma_addr);
     gmacdev->RxDescCount = no_of_desc;
     gmacdev->RxDesc      = (DmaDesc *)first_desc;
     gmacdev->RxDescDma   = dma_addr;
@@ -342,7 +359,6 @@ s32 synopGMAC_setup_rx_desc_queue(synopGMACdevice *gmacdev, u32 no_of_desc, u32 
     for (i = 0; i < gmacdev->RxDescCount; i++)
     {
         synopGMAC_rx_desc_init_ring(gmacdev->RxDesc + i, i == gmacdev->RxDescCount - 1);
-
     }
 
     gmacdev->RxNext = 0;
@@ -497,11 +513,11 @@ void eth_rx_irq(int irqno, void *param)//eth接收中断函数
         synopGMAC_enable_dma_tx(gmacdev);
 
     }
-    if (interrupt & synopGMACDmaRxNormal)
+    if (interrupt & synopGMACDmaRxNormal)//接收到数据了 发送邮件通知eth_rx_thread_entry
     {
         //DEBUG_MES("%s:: Rx Normal \n", __FUNCTION__);
         //synop_handle_received_data(netdev);
-        eth_device_ready(eth_device);//在arch中定义
+        eth_device_ready(eth_device);//在arch中定义 发送一个邮件给线程 eth_rx_thread_entry接收到后进行接收数据处理
     }
     if (interrupt & synopGMACDmaRxAbnormal)
     {
@@ -547,8 +563,8 @@ void eth_rx_irq(int irqno, void *param)//eth接收中断函数
     return;
 }
 
-
-long eth_init()//rt_device_t device//在lwip tcpip thread中被调用
+//eth接口初始化
+long init_eth()//在sys_arch.c中的netif_device_init被调用
 {
 	struct eth_device *eth_device =&this_eth_dev;
     s32 status = 0;
@@ -558,7 +574,7 @@ long eth_init()//rt_device_t device//在lwip tcpip thread中被调用
     synopGMACdevice *gmacdev = (synopGMACdevice *)adapter->synopGMACdev;
     synopGMAC_reset(gmacdev);
 	
-    synopGMAC_attach(gmacdev, (regbase + MACBASE), (regbase + DMABASE), DEFAULT_PHY_BASE, default_MAC_addr);
+    synopGMAC_attach(gmacdev, (regbase + MACBASE), (regbase + DMABASE), DEFAULT_PHY_BASE,eth_device->dev_addr);
 
     synopGMAC_read_version(gmacdev);
     synopGMAC_set_mdc_clk_div(gmacdev, GmiiCsrClk3);
@@ -566,19 +582,15 @@ long eth_init()//rt_device_t device//在lwip tcpip thread中被调用
     gmacdev->ClockDivMdc = synopGMAC_get_mdc_clk_div(gmacdev);
     init_phy(adapter->synopGMACdev);
 
-    DEBUG_MES("tx desc_queue\n");
-    synopGMAC_setup_tx_desc_queue(gmacdev, TRANSMIT_DESC_SIZE, RINGMODE);
+    synopGMAC_setup_tx_desc_queue(gmacdev, TRANSMIT_DESC_SIZE, RINGMODE);//发送描述符队列？每个描述符的地址需要按照总线宽度32 64 128对齐
     synopGMAC_init_tx_desc_base(gmacdev);
 
-    DEBUG_MES("rx desc_queue\n");
     synopGMAC_setup_rx_desc_queue(gmacdev, RECEIVE_DESC_SIZE, RINGMODE);
     synopGMAC_init_rx_desc_base(gmacdev);
     DEBUG_MES("DmaRxBaseAddr = %08x\n", synopGMACReadReg(gmacdev->DmaBase, DmaRxBaseAddr));
 
 //  u32 dmaRx_Base_addr = synopGMACReadReg(gmacdev->DmaBase,DmaRxBaseAddr);
 //  rt_kprintf("first_desc_addr = 0x%x\n", dmaRx_Base_addr);
-
-
     //synopGMAC_dma_bus_mode_init(gmacdev, DmaBurstLength4 | DmaDescriptorSkip1);
     synopGMAC_dma_bus_mode_init(gmacdev, DmaBurstLength4 | DmaDescriptorSkip2);
 
@@ -590,8 +602,6 @@ long eth_init()//rt_device_t device//在lwip tcpip thread中被调用
     synopGMAC_pause_control(gmacdev);
 
     u32 skb;
-	//printf("eth_init 2\n");
-
     do
     {
         skb = (u32)plat_alloc_memory(RX_BUF_SIZE);      //should skb aligned here?
@@ -611,7 +621,6 @@ long eth_init()//rt_device_t device//在lwip tcpip thread中被调用
         }
     }
     while (status >= 0 && (status < (RECEIVE_DESC_SIZE - 1)));
-	//printf("eth_init 3\n");
 
     synopGMAC_clear_interrupt(gmacdev);
 
@@ -645,13 +654,10 @@ long eth_init()//rt_device_t device//在lwip tcpip thread中被调用
     return RT_EOK;
 }
 
-
-
-
+//物理设备初始化
 int init_phy(synopGMACdevice *gmacdev)
 {
     u16 data=0;
-
     synopGMAC_read_phy_reg(gmacdev->MacBase, gmacdev->PhyBase, 2, &data);
 	TR("init_phy DATA = %08x\n",data);
     /*set 88e1111 clock phase delay*/
@@ -685,9 +691,9 @@ int init_phy(synopGMACdevice *gmacdev)
         synopGMAC_write_phy_reg(gmacdev->MacBase, gmacdev->PhyBase, 0x0, data);
     }
 #endif
-
     return 0;
 }
+
 void hw_eth_init_thread_entry(void *parameter)
 {
 	u64 base_addr = Gmac_base;
@@ -695,7 +701,7 @@ void hw_eth_init_thread_entry(void *parameter)
 	static u8 mac_addr0[6] = DEFAULT_MAC_ADDRESS;
 	int index;
 
-	rt_sem_init(&sem_ack, "tx_ack", 1, RT_IPC_FLAG_FIFO);
+	//rt_sem_init(&sem_ack, "tx_ack", 1, RT_IPC_FLAG_FIFO);
 	rt_sem_init(&sem_lock, "eth_lock", 1, RT_IPC_FLAG_FIFO);
 
 	for (index = 21; index <= 30; index++)
@@ -712,17 +718,15 @@ void hw_eth_init_thread_entry(void *parameter)
 	TR("synopGMACadapter addr:0x%08X\n",synopGMACadapter);
 	if (!synopGMACadapter)
 	{
-		rt_kprintf("Error in Memory Allocataion, Founction : %s \n", __FUNCTION__);
+		printf("Error in Memory Allocataion, Founction : %s \n", __FUNCTION__);
 	}
 	memset((char *)synopGMACadapter, 0, sizeof(struct synopGMACNetworkAdapter));
-
-	synopGMACadapter->synopGMACdev	  = NULL;
 
 	synopGMACadapter->synopGMACdev = (synopGMACdevice *) plat_alloc_memory(sizeof(synopGMACdevice));
 	TR("synopGMACadapter->synopGMACdev addr:0x%08X\n",synopGMACadapter->synopGMACdev);
 	if (!synopGMACadapter->synopGMACdev)
 	{
-		rt_kprintf("Error in Memory Allocataion, Founction : %s \n", __FUNCTION__);
+		printf("Error in Memory Allocataion, Founction : %s \n", __FUNCTION__);
 	}
 	memset((char *)synopGMACadapter->synopGMACdev, 0, sizeof(synopGMACdevice));
 	
@@ -730,10 +734,9 @@ void hw_eth_init_thread_entry(void *parameter)
 	 * Attach the device to MAC struct This will configure all the required base addresses
 	 * such as Mac base, configuration base, phy base address(out of 32 possible phys)
 	 * */
-	
 	synopGMAC_attach(synopGMACadapter->synopGMACdev, (regbase + MACBASE), regbase + DMABASE, DEFAULT_PHY_BASE, mac_addr0);
 
-	init_phy(synopGMACadapter->synopGMACdev);
+	init_phy(synopGMACadapter->synopGMACdev);//物理设备初始化
 	synopGMAC_reset(synopGMACadapter->synopGMACdev);
 
 	/* MII setup */
@@ -745,53 +748,52 @@ void hw_eth_init_thread_entry(void *parameter)
 	synopGMACadapter->mii.phy_id = synopGMACadapter->synopGMACdev->PhyBase;
 	synopGMACadapter->mii.supports_gmii = mii_check_gmii_support(&synopGMACadapter->mii);
 	
-	/*
-	memset(&eth_dev, 0, sizeof(eth_dev));
-	eth_dev.iobase = base_addr;
-	eth_dev.name = "e0";
-	eth_dev.priv = synopGMACadapter;
-	eth_dev.dev_addr[0] = mac_addr0[0];
-	eth_dev.dev_addr[1] = mac_addr0[1];
-	eth_dev.dev_addr[2] = mac_addr0[2];
-	eth_dev.dev_addr[3] = mac_addr0[3];
-	eth_dev.dev_addr[4] = mac_addr0[4];
-	eth_dev.dev_addr[5] = mac_addr0[5];
-
-	eth_dev.parent.parent.type			= RT_Device_Class_NetIf;
-	eth_dev.parent.parent.init			= eth_init;
-	eth_dev.parent.parent.open			= eth_open;
-	eth_dev.parent.parent.close 		= eth_close;
-	eth_dev.parent.parent.read			= eth_read;
-	eth_dev.parent.parent.write 		= eth_write;
-	eth_dev.parent.parent.control		= eth_control;
-	eth_dev.parent.parent.user_data 	= RT_NULL;
-
-	eth_dev.parent.eth_tx			 = rt_eth_tx;
-	eth_dev.parent.eth_rx			 = rt_eth_rx;
-	*/
-
-	//eth_device_init(&(eth_dev.parent), "e0");
-
-	//eth_device_linkchange(&eth_dev.parent, RT_TRUE);	 //linkup the e0 for lwip to check
-
 	this_eth_dev.priv=synopGMACadapter;
-	memcpy(this_eth_dev.dev_addr,default_MAC_addr,MAX_ADDR_LEN);//复制mac地址给设备
+	
+	//设置mac
+	char* macaddrtmp=getenv(ENV_MAC_NAME);
+	if(macaddrtmp!=0)
+	{
+		printf("macaddrtmp:%s\n",macaddrtmp);
+		mac_str_to_hex(macaddrtmp,mac_addr_mem);
+	}
+	printf("mac addr %02x:%02x:%02x:%02x:%02x:%02x\n",mac_addr_mem[0],mac_addr_mem[1],mac_addr_mem[2],mac_addr_mem[3],mac_addr_mem[4],mac_addr_mem[5]);
+
+	char *ipaddtmp=getenv(ENV_IP_NAME);
+	if(ipaddtmp!=0)
+	{
+		memset(ip_addr_mem,0,16);
+		memcpy(ip_addr_mem,ipaddtmp,strlen(ipaddtmp));
+	}
+	char *gatewayaddtmp=getenv(ENV_GATEWAY_NAME);
+	if(gatewayaddtmp!=0)
+	{
+		memset(gateway_addr_mem,0,16);
+		memcpy(gateway_addr_mem,gatewayaddtmp,strlen(gatewayaddtmp));
+	}
+	char *maskaddtmp=getenv(ENV_MASK_NAME);
+	if(maskaddtmp!=0)
+	{
+		memset(mask_addr_mem,0,16);
+		memcpy(mask_addr_mem,maskaddtmp,strlen(maskaddtmp));
+	}
+	
+
+	memcpy(this_eth_dev.dev_addr,mac_addr_mem,MAX_ADDR_LEN);//复制mac地址给设备
 
 	unsigned char devname[]="e0Dstling";
 	memcpy(this_eth_dev.name,devname,strlen(devname));
 	this_eth_dev.eth_tx=rt_eth_tx;
 	this_eth_dev.eth_rx=rt_eth_rx;
 
-	eth_system_device_init();//提前初始换
-
+	eth_system_device_init();//提前初始换接收和发送线程 priority=14
 	
-	eth_device_init(&this_eth_dev, this_eth_dev_name);
+	eth_device_init(&this_eth_dev, this_eth_dev_name);//申请netif接口并初始化
 
 	eth_device_linkchange(&this_eth_dev, 1);   //linkup the e0 for lwip to check
 	
-	
-	//初始化lwip组件
-	lwip_system_init();//lwip_init();//在lwip_system_init->tcpip_init中被初始化 
+	//上面都准备好了 开始初始化lwip的东西 包括tcpip_thread eth接口等
+	lwip_system_init();//lwip_init()在lwip_system_init->tcpip_init中被初始化 
 
 	return 0;
 }
@@ -801,7 +803,7 @@ void hw_eth_init_thread_entry(void *parameter)
 
 int rt_hw_eth_init(void)
 {
-	thread_join_init("hw_eth_init_thread_entry",hw_eth_init_thread_entry,NULL,2048,13,100);
+	thread_join_init("hw_eth_init",hw_eth_init_thread_entry,NULL,2048,13,100);
 	return 0;
 }
 FINSH_FUNCTION_EXPORT(rt_hw_eth_init,rt_hw_eth_init in sys);

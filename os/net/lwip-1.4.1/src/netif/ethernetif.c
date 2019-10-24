@@ -50,11 +50,16 @@
 #include "netif/etharp.h"
 
 #include <ethernetif.h>
+#include <lwip/ip_addr.h>
 
 #define netifapi_netif_set_link_up(n)      netifapi_netif_common(n, netif_set_link_up, NULL)
 #define netifapi_netif_set_link_down(n)    netifapi_netif_common(n, netif_set_link_down, NULL)
 
-extern unsigned char default_MAC_addr[];
+//extern unsigned char default_MAC_addr[];
+
+#if !MEM_LIBC_MALLOC
+unsigned char lwip_mem_pool[LWIP_MEM_POOL_SIZE];//内存池，在驱动的mem.c中被使用
+#endif
 
 struct eth_tx_msg
 {
@@ -67,7 +72,7 @@ static struct rt_mailbox eth_tx_thread_mb;
 
 #define RT_LWIP_ETHTHREAD_PRIORITY 14
 #define RT_LWIP_ETHTHREAD_STACKSIZE 2048
-#define RT_LWIP_ETHTHREAD_MBOX_SIZE 8
+#define RT_LWIP_ETHTHREAD_MBOX_SIZE 24//邮箱过小可能会丢包？？？
 
 #define RT_ETHERNETIF_THREAD_PREORITY	RT_LWIP_ETHTHREAD_PRIORITY
 
@@ -159,7 +164,7 @@ long eth_device_init(struct eth_device * dev, const char *name)
     netif->mtu			= ETHERNET_MTU;
 	
     /* get hardware MAC address */
-	memcpy(netif->hwaddr,default_MAC_addr,6);
+	memcpy(netif->hwaddr,dev->dev_addr,MAX_ADDR_LEN);
 	
     /* set output */
 	
@@ -213,20 +218,17 @@ long eth_device_linkchange(struct eth_device* dev, char up)
     return rt_mb_send(&eth_rx_thread_mb, (unsigned long)dev);
 }
 
-///*
-long eth_device_ready(struct eth_device* dev)
+long eth_device_ready(struct eth_device* dev)//被synmain.c的eth_rx_irq接收中断函数调用
 {
     if (dev->netif)
         // post message to Ethernet thread 
-        return rt_mb_send(&eth_rx_thread_mb, (unsigned long)dev);
+        return rt_mb_send(&eth_rx_thread_mb, (unsigned long)dev);//发送一个邮件给eth_rx_thread_entry接收线程
     else
         return ERR_OK;  //netif is not initialized yet, just return. 
 }
-//*/
-
 
 /* Ethernet Rx Thread */
-static void eth_rx_thread_entry(void* parameter)
+static void eth_rx_thread_entry(void* parameter)//从eth_device_ready中获取一个邮件并进行数据处理
 {
     struct eth_device* device;
 
@@ -236,12 +238,11 @@ static void eth_rx_thread_entry(void* parameter)
         {
             struct pbuf *p;
 			//printf("eth_rx_thread_entry rt_mb_recv,name:%s\n",device->name);
-
             /* check link status */
             if (device->link_changed)
             {
                 int status;
-                unsigned int level;
+                register unsigned int level;
 
                 level = rt_hw_interrupt_disable();
                 status = device->link_status;
@@ -257,20 +258,26 @@ static void eth_rx_thread_entry(void* parameter)
             /* receive all of buffer */
             while (1)
             {
-            	if(device->eth_rx == RT_NULL) break;
+            	if(device->eth_rx == RT_NULL) 
+					break;
             	
-                p = device->eth_rx(device);
+                p = device->eth_rx(device);//synmain.C中的rt_eth_rx 获取到中断函数接收到一帧数据了
                 if (p != RT_NULL)
                 {
                     /* notify to upper layer */
-                    if( device->netif->input(p, device->netif) != ERR_OK )
+                    if( device->netif->input(p, device->netif) != ERR_OK )//tcpip_input()  在tcpip.c中 传递给tcpip_input 再传递给tcpip_thread进行数据处理
                     {
                         LWIP_DEBUGF(NETIF_DEBUG, ("ethernetif_input: Input error\n"));
+						printf("%s,%s,%d,ethernetif_input: Input error\n",__FILE__ , __func__, __LINE__);
                         pbuf_free(p);
                         p = NULL;
                     }
                 }
-                else break;
+                else//有可能是分配内存失败 也有可能是本来就没有接收到数据
+                {
+					//printf("pbuf==NULL, %s %s:%d\n",__FILE__ , __func__, __LINE__);
+					break;
+                }
             }
         }
         else
@@ -342,7 +349,7 @@ int eth_system_device_init(void)
 
 void list_if(void)
 {
-    unsigned long index;
+    unsigned char index;
     struct netif * netif;
 
     //rt_enter_critical();
@@ -379,13 +386,16 @@ void list_if(void)
 
 #if LWIP_DNS
     {
-        struct ip_addr ip_addr;
-
+        /*
+        struct ip_addr ip_addrx;
+		//ip_addr_t ip_addrx;
         for(index=0; index<DNS_MAX_SERVERS; index++)
         {
-            ip_addr = dns_getserver(index);
-            printf("dns server #%d: %s\n", index, ipaddr_ntoa(&(ip_addr)));
+             ip_addrx =dns_getserver(index);
+			//memcpy(&ip_addr,)
+            printf("dns server #%d: %s\n", index, ipaddr_ntoa(&(ip_addrx)));
         }
+		*/
     }
 #endif /**< #if LWIP_DNS */
 

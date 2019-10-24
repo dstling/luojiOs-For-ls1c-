@@ -78,6 +78,7 @@
 #endif
 
 #include <string.h>
+u8_t pbuf_free2(struct pbuf *p);
 
 #define SIZEOF_STRUCT_PBUF        LWIP_MEM_ALIGN_SIZE(sizeof(struct pbuf))
 /* Since the pool is created in memp, PBUF_POOL_BUFSIZE will be automatically
@@ -203,8 +204,8 @@ pbuf_pool_is_empty(void)
  * @return the allocated pbuf. If multiple pbufs where allocated, this
  * is the first pbuf of a pbuf chain.
  */
-struct pbuf *
-pbuf_alloc(pbuf_layer layer, u16_t length, pbuf_type type)
+ //								(PBUF_LINK, 	MAX_ETHERNET_PAYLOAD, PBUF_RAM)
+struct pbuf *pbuf_alloc(pbuf_layer layer, u16_t length, pbuf_type type)
 {
   struct pbuf *p, *q, *r;
   u16_t offset;
@@ -303,12 +304,13 @@ pbuf_alloc(pbuf_layer layer, u16_t length, pbuf_type type)
     /*r->next = NULL;*/
 
     break;
-  case PBUF_RAM:
+  case PBUF_RAM://到这里了
     /* If pbuf is to be allocated in RAM, allocate memory for it. */
     p = (struct pbuf*)mem_malloc(LWIP_MEM_ALIGN_SIZE(SIZEOF_STRUCT_PBUF + offset) + LWIP_MEM_ALIGN_SIZE(length));
     if (p == NULL) {
       return NULL;
     }
+	//printf("mem_malloc: %s,%s,%d,addr:%p\n",__FILE__ , __func__, __LINE__,p);
     /* Set up internal structure of the pbuf. */
     p->payload = LWIP_MEM_ALIGN((void *)((u8_t *)p + SIZEOF_STRUCT_PBUF + offset));
     p->len = p->tot_len = length;
@@ -818,6 +820,7 @@ pbuf_dechain(struct pbuf *p)
     p->tot_len = p->len;
     /* q is no longer referenced by p, free it */
     LWIP_DEBUGF(PBUF_DEBUG | LWIP_DBG_TRACE, ("pbuf_dechain: unreferencing %p\n", (void *)q));
+	//printf("pbuf_free: %s,%s,%d\n",__FILE__ , __func__, __LINE__);
     tail_gone = pbuf_free(q);
     if (tail_gone > 0) {
       LWIP_DEBUGF(PBUF_DEBUG | LWIP_DBG_TRACE,

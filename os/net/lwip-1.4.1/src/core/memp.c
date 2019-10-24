@@ -62,6 +62,7 @@
 #include <string.h>
 
 #if !MEMP_MEM_MALLOC /* don't build if not configured for use in lwipopts.h */
+int memp_malloc_counter=0;
 
 struct memp {
   struct memp *next;
@@ -387,14 +388,20 @@ memp_init(void)
  */
 void *
 #if !MEMP_OVERFLOW_CHECK
-memp_malloc(memp_t type)
+memp_malloc(memp_t type)//用这个
 #else
 memp_malloc_fn(memp_t type, const char* file, const int line)
 #endif
 {
+	//xxxxxxxxxxxxxxxx;
   struct memp *memp;
   SYS_ARCH_DECL_PROTECT(old_level);
- 
+  
+  //printf("memp_malloc,type:%d,MEMP_MAX:%d\n",type,MEMP_MAX);
+  if(type >= MEMP_MAX)
+  {
+	printf("error memp_malloc,type:%d,MEMP_MAX:%d\n",type,MEMP_MAX);
+  }
   LWIP_ERROR("memp_malloc: type < MEMP_MAX", (type < MEMP_MAX), return NULL;);
 
   SYS_ARCH_PROTECT(old_level);
@@ -421,7 +428,8 @@ memp_malloc_fn(memp_t type, const char* file, const int line)
   }
 
   SYS_ARCH_UNPROTECT(old_level);
-
+  if(memp!=NULL)
+  	memp_malloc_counter++;
   return memp;
 }
 
@@ -463,6 +471,8 @@ memp_free(memp_t type, void *mem)
 #if MEMP_SANITY_CHECK
   LWIP_ASSERT("memp sanity", memp_sanity());
 #endif /* MEMP_SANITY_CHECK */
+
+  memp_malloc_counter--;
 
   SYS_ARCH_UNPROTECT(old_level);
 }

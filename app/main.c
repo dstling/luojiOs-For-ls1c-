@@ -50,7 +50,8 @@ void bsp_init(void)
 {
     // 初始化调试串口
     uart2_init();
-    
+    //init_printf_buf();
+	
     // 硬浮点初始化
     fpu_init();
 

@@ -2,10 +2,20 @@
 #define RT_THREAD_PRIORITY_MAX 32
 #define RT_TICK_PER_SECOND 1000
 
+/*
 #define rt_inline					static __inline
-
 #define SECTION(x)                  __attribute__((section(x)))
 #define RT_USED 					__attribute__((used))
+#define RT_WEAK 					__attribute__((weak))
+*/
+#define SECTION(x)					__attribute__((section(x)))
+#define RT_UNUSED					__attribute__((unused))
+#define RT_USED 					__attribute__((used))
+#define ALIGN(n)					__attribute__((aligned(n)))
+#define RT_WEAK 					__attribute__((weak))
+#define rt_inline					static __inline
+#define RTT_API
+
 typedef int (*init_fn_t)(void);
 #define INIT_COMPONENT_EXPORT(fn)       INIT_EXPORT(fn, "4")
 #define INIT_EXPORT(fn, level)  RT_USED const init_fn_t __rt_init_##fn SECTION(".rti_fn."level) = fn
@@ -26,6 +36,7 @@ typedef int (*init_fn_t)(void);
 #define RT_THREAD_SLEEP		            0x03                /**< Sleep status */
 #define RT_THREAD_RUNNING               0x04                /**< Running status */
 #define RT_THREAD_CLOSE                 0x05                /**< Closed status */
+#define RT_THREAD_DEAD_SLEEP            0x06                /**< Sleep status */
 
 //#define RT_THREAD_STAT_MASK             0x0f
 
@@ -230,5 +241,8 @@ struct rt_device
 					 &pos->member != (head); \
 					 pos = n, n = rt_list_entry(n->member.next, typeof(*n), member))
 
+//之所这么做，主要是当线程函数正常退出进入rt_thread_exit时，会出bug，原因不明
+//在线程函数退出之前调用下THREAD_DEAD_SLEEP，然后由idle线程去清理掉它
+#define THREAD_DEAD_EXIT ({while(1) rt_thread_dead_exit();})
 
 

@@ -1273,8 +1273,7 @@ etharp_request(struct netif *netif, ip_addr_t *ipaddr)
  * @param p the recevied packet, p->payload pointing to the ethernet header
  * @param netif the network interface on which the packet was received
  */
-err_t
-ethernet_input(struct pbuf *p, struct netif *netif)
+err_t ethernet_input(struct pbuf *p, struct netif *netif)
 {
   struct eth_hdr* ethhdr;
   u16_t type;
@@ -1342,12 +1341,12 @@ ethernet_input(struct pbuf *p, struct netif *netif)
       p->flags |= PBUF_FLAG_LLBCAST;
     }
   }
-
+  	//printf("pbuf_alloc: %s,%s,%d,type:%d,%d,%d\n",__FILE__ , __func__, __LINE__,type,PP_HTONS(ETHTYPE_IP),PP_HTONS(ETHTYPE_ARP));
   switch (type) {
 #if LWIP_ARP
-    /* IP packet? */
-    case PP_HTONS(ETHTYPE_IP):
-      if (!(netif->flags & NETIF_FLAG_ETHARP)) {
+    /* IP packet? ip包*/
+    case PP_HTONS(ETHTYPE_IP)://PP_HTONS(ETHTYPE_IP)==8
+      if (!(netif->flags & NETIF_FLAG_ETHARP)) {//NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_IGMP
         goto free_and_return;
       }
 #if ETHARP_TRUST_IP_MAC
@@ -1360,12 +1359,13 @@ ethernet_input(struct pbuf *p, struct netif *netif)
         goto free_and_return;
       } else {
         /* pass to IP layer */
+	  	//pbuf数据处理
         ip_input(p, netif);
       }
       break;
       
-    case PP_HTONS(ETHTYPE_ARP):
-      if (!(netif->flags & NETIF_FLAG_ETHARP)) {
+    case PP_HTONS(ETHTYPE_ARP)://PP_HTONS(ETHTYPE_ARP)==1544
+      if (!(netif->flags & NETIF_FLAG_ETHARP)) {//NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_IGMP
         goto free_and_return;
       }
       /* pass p to ARP module */
@@ -1390,9 +1390,11 @@ ethernet_input(struct pbuf *p, struct netif *netif)
 
   /* This means the pbuf is freed or consumed,
      so the caller doesn't have to free it again */
+     //这里没有free 哦
   return ERR_OK;
 
 free_and_return:
+	printf("free_and_return\n");
   pbuf_free(p);
   return ERR_OK;
 }

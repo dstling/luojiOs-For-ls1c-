@@ -57,8 +57,8 @@ enum GMACPhyBase
 //#define TRANSMIT_DESC_SIZE  256		//Tx Descriptors needed in the Descriptor pool/queue
 //#define RECEIVE_DESC_SIZE   256 	//Rx Descriptors needed in the Descriptor pool/queue
 //#define TRANSMIT_DESC_SIZE  13//256	//Tx Descriptors needed in the Descriptor pool/queue
-#define TRANSMIT_DESC_SIZE  36 //48	//Tx Descriptors needed in the Descriptor pool/queue
-#define RECEIVE_DESC_SIZE   72 //96	//Rx Descriptors needed in the Descriptor pool/queue
+#define TRANSMIT_DESC_SIZE  512//36 //48	//Tx Descriptors needed in the Descriptor pool/queue
+#define RECEIVE_DESC_SIZE   512//72 //96	//Rx Descriptors needed in the Descriptor pool/queue
 
 #define ETHERNET_HEADER             14	//6 byte Dest addr, 6 byte Src addr, 2 byte length/type
 #define ETHERNET_CRC                 4	//Ethernet CRC
@@ -75,7 +75,7 @@ enum GMACPhyBase
 
 
 // This is the IP's phy address. This is unique address for every MAC in the universe
-#define DEFAULT_MAC_ADDRESS {0x00, 0x55, 0x7B, 0xB5, 0x7D, 0xF7}
+//#define DEFAULT_MAC_ADDRESS {0x00, 0x55, 0x7B, 0xB5, 0x7D, 0xF7}
 
 /*
 DMA Descriptor Structure
@@ -165,7 +165,7 @@ typedef struct synopGMACDeviceStruct
 
   DmaDesc * TxBusyDesc;          /* Tx Descriptor address corresponding to the index TxBusy */
   DmaDesc * TxNextDesc;          /* Tx Descriptor address corresponding to the index TxNext */
-  DmaDesc * RxBusyDesc;          /* Rx Descriptor address corresponding to the index TxBusy */
+  DmaDesc * RxBusyDesc;          /* Rx Descriptor address corresponding to the index RxBusy */
   DmaDesc * RxNextDesc;          /* Rx Descriptor address corresponding to the index RxNext */
 
   /*Phy related stuff*/

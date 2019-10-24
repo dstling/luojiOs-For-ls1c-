@@ -629,7 +629,7 @@ do {									\
 #define read_c0_badvaddr()		__read_32bit_c0_register($8, 0)
 #define write_c0_badvaddr(val)	__write_32bit_c0_register($8, 0, val)
 
-#define read_c0_count()			__read_32bit_c0_register($9, 0)
+#define read_c0_count()			__read_32bit_c0_register($9, 0)				//和11同时使用
 #define write_c0_count(val)		__write_32bit_c0_register($9, 0, val)
 
 #define read_c0_count2()		__read_32bit_c0_register($9, 6) /* pnx8550 */
@@ -641,7 +641,7 @@ do {									\
 #define read_c0_entryhi()		__read_32bit_c0_register($10, 0)
 #define write_c0_entryhi(val)	__write_32bit_c0_register($10, 0, val)
 
-#define read_c0_compare()		__read_32bit_c0_register($11, 0)
+#define read_c0_compare()		__read_32bit_c0_register($11, 0)		//分辨率定时器，通常是CPU频率的一半
 #define write_c0_compare(val)	__write_32bit_c0_register($11, 0, val)
 
 #define read_c0_compare2()		__read_32bit_c0_register($11, 6) /* pnx8550 */

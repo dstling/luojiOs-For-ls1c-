@@ -25,7 +25,9 @@ SECTIONS
      /* section information for finsh shell */
      . = ALIGN(4);
      __fsymtab_start = .;
-     KEEP(*(FSymTab))
+     
+	KEEP(*(FSymTab))
+	
      __fsymtab_end = .;
      . = ALIGN(4);
 
@@ -104,7 +106,7 @@ SECTIONS
 	__bss_end = .;
   }
   _end = . ;
-  PROVIDE (end = .);
+  PROVIDE (end_rom = .);
 
 
   .stab 0 : { *(.stab) }

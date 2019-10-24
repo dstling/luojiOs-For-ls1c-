@@ -126,7 +126,8 @@ void test_uart3_send_recv(void)
     irq_enable(LS1C_UART3_IRQ);
 
     // 通过串口3先发送一个字符串，用于单独判断发送功能是否正常
-    uart_print(LS1C_UART3, "uart3 send\r\n");
+    char uart3_msg[]="uart3 send\r\n";
+    uart_print(LS1C_UART3, uart3_msg,strlen(uart3_msg));
 
     while (1)
     {
@@ -160,7 +161,8 @@ void test_uart8_send_recv(void)
     irq_enable(LS1C_UART8_IRQ);
 
     // 通过串口8先发送一个字符串，用于单独判断发送功能是否正常
-    uart_print(LS1C_UART8, "uart8 send\r\n");
+    char uart8_msg[]="uart8 send\r\n";
+    uart_print(LS1C_UART8, uart8_msg,strlen(uart8_msg));
 
     while (1)
     {

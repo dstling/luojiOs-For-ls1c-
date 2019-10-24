@@ -35,6 +35,8 @@ SRC_C = $(wildcard lib/*.c example/*.c app/*.c libc/*.c libm/*.c \
 			os/net/lwip-1.4.1/src/api/*.c \
 			os/net/lwip-1.4.1/src/netif/*.c\
 			os/net/lwip-1.4.1/src/arch/*.c\
+			os/hardware/*.c\
+			os/filesys/*.c\
 			)
 			
 OBJS = $(patsubst %.S, %.o, $(SRC_S)) $(patsubst %.c, %.o, $(SRC_C))  # 注意汇编文件一定要在前面
@@ -53,16 +55,17 @@ VPATH += include
 LIBS = 
 
 #编译参数
-CCFLAGS = -mno-abicalls -fno-pic -g -Wall -Wstrict-prototypes -Wno-uninitialized -Wno-format -Wno-main -O2 -G 0 -mips2 -fno-builtin -nostdinc
+CCFLAGS = -mno-abicalls -fno-pic -g -Wall -Wstrict-prototypes -Wno-uninitialized -Wno-format -Wno-main -O2 -G 0 -mips2 -fno-builtin -nostdinc 
 AFLAGS  = -mno-abicalls -fno-pic -G 0 -mips2 -Wall -mno-abicalls -fno-builtin
 #链接参数
 LDFLAGS = -m elf32ltsmip -G 0 -static -n -nostdlib -N
 
 # 最终的目标文件
-OUTPUT_ELF = OpenLoongsonLib1c.elf
-OUTPUT_DEBUG_ELF = OpenLoongsonLib1c_debug.elf
-OUTPUT_BIN = OpenLoongsonLib1c.bin
-OUTPUT_MAP = OpenLoongsonLib1c.map
+OUTPUT_NAME = luojios
+OUTPUT_ELF = $(OUTPUT_NAME).elf
+OUTPUT_DEBUG_ELF = $(OUTPUT_NAME).elf
+OUTPUT_BIN = $(OUTPUT_NAME).bin
+OUTPUT_MAP = $(OUTPUT_NAME).map
 
 all:$(OUTPUT_BIN)
 

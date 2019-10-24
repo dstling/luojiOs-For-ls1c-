@@ -69,7 +69,7 @@ void uart2_print(const char *str);
  * 在调试串口打印字符串
  * @str 待打印的字符串
  */
-void uart_debug_print(const char *str);
+void uart_debug_print(const char *str,unsigned int len);
 
 
 /*
@@ -100,7 +100,7 @@ void uart_putc(ls1c_uart_t uartx, unsigned char ch);
  * @uartx 串口号
  * @str 待打印的字符串
  */
-void uart_print(ls1c_uart_t uartx, const char *str);
+void uart_print(ls1c_uart_t uartx, const char *str,unsigned int len);
 
 
 #endif

@@ -428,6 +428,7 @@ sys_timeouts_mbox_fetch(sys_mbox_t *mbox, void **msg)
   void *arg;
 
  again:
+ 	//printf("~");
   if (!next_timeout) {
     time_needed = sys_arch_mbox_fetch(mbox, msg, 0);
   } else {
