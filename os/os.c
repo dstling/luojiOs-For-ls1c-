@@ -28,11 +28,6 @@ void rt_interrupt_leave(void)
     rt_hw_interrupt_enable(level);
 }
 
-void show_irq_nest(void)//打印中断嵌套数值 >1说明中断嵌套了 1说明处在禁止中断状态
-{
-	printf("rt_interrupt_nest:%d\n",rt_interrupt_nest);
-}
-FINSH_FUNCTION_EXPORT(show_irq_nest,show_irq_nest in sys);
 
 RT_WEAK unsigned char rt_interrupt_get_nest(void)
 {
@@ -145,7 +140,7 @@ int osMain(void)
 
 	thread_join_init("shell",shell_thread_entry,NULL,2048,RT_THREAD_PRIORITY_MAX-1,8);//加入shell线程 给他最低的优先级吧 RT_THREAD_PRIORITY_MAX-1
 	
-	//rt_hw_eth_init();//以线程运行的方式初始化 tcpip初始化用到了信号量wait等操作
+	rt_hw_eth_init();//以线程运行的方式初始化 
 
 	list_thread();//显示线程
 

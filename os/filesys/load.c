@@ -20,18 +20,24 @@ void do_loadelf(void*userdata)
 {
 	int offsetN=0;
 	long ep;
-	int fd=open("tftp://172.0.0.11/rtthread.elf",0|O_NONBLOCK);//mode  OpenLoongsonLib1c.bin
-	printf("loading...\n");
-	if(fd>-1)
+	char* loadelfAddr=getenv("loadelfAddr");
+	if(loadelfAddr!=0)
 	{
-		ep=load_elf (fd, loadelf_buf, &offsetN,0 );
-		printf ("\nEntry address is %08x\n", ep);
-		close(fd);
-		loadEntry=ep;//指定入口
-		loadStack=&LOAD_THREAD_STACK;//指定load的地址使用的stack
+		int fd=open(loadelfAddr,0|O_NONBLOCK);//mode  OpenLoongsonLib1c.bin
+		printf("loading...\n");
+		if(fd>-1)
+		{
+			ep=load_elf (fd, loadelf_buf, &offsetN,0 );
+			printf ("\nEntry address is %08x\n", ep);
+			close(fd);
+			loadEntry=ep;//指定入口
+			loadStack=&LOAD_THREAD_STACK;//指定load的地址使用的stack
+		}
+		else
+			printf("tftp Open error.\n");
 	}
 	else
-		printf("tftpOpenEntry error.\n");
+		printf("set loadelfAddr tftp://x.x.x.x/elfFormatFilename");
 	
 	while(1)
 		rt_thread_delay(1000);

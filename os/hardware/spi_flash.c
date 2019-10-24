@@ -421,55 +421,6 @@ int chipErase(int argc, char **argv)
 	return 1;
 }
 
-int readSpiFlashHex(int ac, char **argv)
-{
-	char ret=0;
-	unsigned int addr=0;
-	unsigned int read_data_len=0;
-	unsigned int readed_len=0;
-	static char readbuf[512];
-	printf("read_flash_data_cmd().\n");
-	if(ac<3)
-	{
-		printf("useage: read_flash_data addr 32\n");
-		return 0;
-	}
-
-	char * pt=argv[1]+2;//0x001234
-	ret=panduan_hex(pt);
-	if(ret==0)
-	{
-		printf("arg 1 not a hex addr.for example:0x12345678\n");
-		return 0;
-	}
-	addr=str_to_hex(pt);
-	read_data_len=atoi(argv[2]);
-	printf("addr:0x%08X readlen:%d\n",addr,read_data_len);
-
-	while(readed_len<read_data_len)
-	{
-		if(read_data_len-readed_len>512)
-		{
-			read_flash_data(addr,512,readbuf);
-			show_hex(readbuf,512,addr);
-			addr+=512;
-			readed_len+=512;
-		}
-		else
-		{
-			read_flash_data(addr,read_data_len-readed_len,readbuf);
-			show_hex(readbuf,read_data_len-readed_len,addr);
-			break;
-		}
-	}
-	
-    return (1);
-}
-///*
-#include <shell.h>
-FINSH_FUNCTION_EXPORT(readSpiFlashHex,readSpiFlashHex in sys);
-//*/
-
 
 
 

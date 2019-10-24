@@ -1,5 +1,8 @@
 
-ROM空间布局（详见env.c）
+
+编译前修改os/include/buildconfig.h内的ip地址等信息
+
+ROM空间布局（详见buildconfig.h和env.c）
 bootRomSize=256k NVRAM_SECSIZE=4k时rom空间分配
 
 rom空间分配
@@ -75,10 +78,8 @@ list_if 显示网络信息
 		net mask  : 255.255.0.0
 		=====================================================
 
-showThreadSpMem  显示线程stack使用情况
-		showThreadSpMem 3   显示id=3的线程stack情况 线程堆默认被初始化成'#'即23H
-
-		finded thread name:erx
+showThreadStack  显示线程stack使用情况 可能会死机^_^
+		showThreadStack 3   显示id=3的线程stack情况 线程堆默认被初始化成'#'即23H
 
 		======================================
 		erx. bytes data len:2048
@@ -101,6 +102,15 @@ showThreadSpMem  显示线程stack使用情况
 		127     :12 00 00 00 13 00 00 00 14 00 00 00 15 00 00 00 
 		128     :16 00 00 00 17 00 00 00 30 00 02 80 38 47 03 80 
 		======================================
+
+
+loadelf load tftp 文件,配合go使用 目前只测试了rtthread.elf set下loadelfAddr地址 这里暂时先这样
+	
+		set loadelfAddr tftp://172.0.0.11/rtthread.elf
+		loadelf
+		go
+
+		
 
 hello	指令 hello world
 

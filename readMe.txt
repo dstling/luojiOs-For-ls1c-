@@ -5,16 +5,27 @@
 20191024更新日志
 新代码更改原裸机库较多，不再赘述
 
-1、修复thread.c内多处bug
-2、更新完善net驱动，现在比较稳定了
-3、lwip移植比较完善了
-4、可以使用tftp，通过网络更新luojios.bin了
-5、可以通过tftp使用load和go了，目前测试load rtthread.elf正常
-6、新增了一些设置功能，将参数保存在rom中(可以set mac地址 ip地址等)
-7、写个《luoji设置和指令说明》吧
+1、编译前修改os/include/buildconfig.h内的ip地址等信息
+2、修复thread.c内多处bug
+3、更新完善net驱动，现在比较稳定了
+4、lwip移植比较完善了
+5、可以使用tftp，通过网络更新luojios.bin了
+6、可以通过tftp使用load和go了，目前测试load 
+rtthread.elf正常（提供了一个带开发板nand文件系统的rtthread.elf文件）
+7、新增了一些设置功能，将参数保存在rom中(可以set mac地址 ip地址等)
+8、写个《luoji设置和指令说明》吧
 
 
-之前记录
+
+
+
+
+
+
+
+
+
+之前历史记录
 =====================================================
 
 闲来无事，给裸机加上多线程和shell

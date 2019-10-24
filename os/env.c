@@ -1,12 +1,12 @@
-
+#include <buildconfig.h>
 #include <types.h>
 #include <stdio.h>
 #include <shell.h>
 #include <env.h>
 
 #define NVRAM_OFFS			0							//参数保存位置偏移 这里不偏移
-#define NVRAM_SECSIZE		(4*1024) 					//环境变量空间 4k=4096byte 默认包含在256kB的空间尾部 之所以是4k，是为了环境变量参数重写入flash 最小4k擦除 免得破坏其他数据
-#define BOOT_ROM_SIZE 		256 						//单位KB 被4整除即可 编译完此bin后，确认下有没有大于这个值，大了务必调整
+//#define NVRAM_SECSIZE		(4*1024) 					//环境变量空间 4k=4096byte 默认包含在256kB的空间尾部 之所以是4k，是为了环境变量参数重写入flash 最小4k擦除 免得破坏其他数据
+//#define BOOT_ROM_SIZE 		256 						//单位KB 被4整除即可 编译完此bin后，确认下有没有大于这个值，大了务必调整
 int 	bootRomSize		=	(BOOT_ROM_SIZE*1024);		//boot rom 存储在flash的前bootRomSize内 必须4k对齐
 
 #define NVRAM_POS			(bootRomSize-NVRAM_SECSIZE)	//该地址之前的空间用于存储PMON程序 
@@ -23,13 +23,17 @@ static int	envinited = 0;//环境变量初始化标志
 
 
 struct envpair stdenvtab[]={
-	{ENV_IP_NAME,		"172.0.0.13"},
-	{ENV_MASK_NAME,		"255.255.0.0"},
-	{ENV_GATEWAY_NAME,	"172.0.0.1"},
-	{ENV_MAC_NAME,		"00:55:7B:B5:7D:F7"},
+	{ENV_IP_NAME,		LOCAL_IP},
+	{ENV_MASK_NAME,		LOCAL_MASK},
+	{ENV_GATEWAY_NAME,	LOCAL_GATEWY},
+	{ENV_MAC_NAME,		LOCAL_MAC},
 		
-	{ENV_TFTP_SERVER_IP_NAME,	"172.0.0.11"},
-	{ENV_TFTP_PMON_FILE_NAME,	"luojios.bin"},
+	{ENV_TFTP_SERVER_IP_NAME,	ENV_TFTP_SERVER_IP},
+	{ENV_TFTP_PMON_FILE_NAME,	ENV_TFTP_PMON_FILE},
+
+	{"loadelfAddr",	LOAD_ELF_ADDR_FILE},
+
+	
 	//{"",""},
 	//{"",""},
 	{0}

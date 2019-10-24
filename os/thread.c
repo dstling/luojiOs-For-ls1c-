@@ -1,7 +1,7 @@
 
 #include <types.h>
+#include <buildconfig.h>
 #include <stdio.h>
-
 #include "rtdef.h"
 #include "shell.h"
 
@@ -38,13 +38,13 @@ while (0)
 extern unsigned int rt_interrupt_nest;
 long list_thread(void);
 
-
-rt_inline void rt_list_init(rt_list_t *l)
+// rt_inline
+ void rt_list_init(rt_list_t *l)
 {
     l->next = l->prev = l;
 }
 
-rt_inline void rt_list_insert_before(rt_list_t *l, rt_list_t *n)
+void rt_list_insert_before(rt_list_t *l, rt_list_t *n)
 {
     l->prev->next = n;
     n->prev = l->prev;
@@ -53,7 +53,7 @@ rt_inline void rt_list_insert_before(rt_list_t *l, rt_list_t *n)
     n->next = l;
 }
 
-rt_inline void rt_list_remove(rt_list_t *n)
+void rt_list_remove(rt_list_t *n)
 {
     n->next->prev = n->prev;
     n->prev->next = n->next;
@@ -61,12 +61,12 @@ rt_inline void rt_list_remove(rt_list_t *n)
     n->next = n->prev = n;
 }
 
-rt_inline int rt_list_isempty(const rt_list_t *l)
+int rt_list_isempty(const rt_list_t *l)
 {
     return l->next == l;
 }
 
-rt_inline void rt_list_insert_after(rt_list_t *l, rt_list_t *n)
+void rt_list_insert_after(rt_list_t *l, rt_list_t *n)
 {
 	l->next->prev = n;
 	n->next = l->next;
@@ -1501,16 +1501,6 @@ int ps_thread(void)
 }
 
 
-void list_deadthread(void)
-{
-	struct rt_thread *dead_thread;
-	if (!rt_list_isempty(&rt_thread_dead))
-	rt_list_for_each_entry(dead_thread,&rt_thread_dead,tlist)
-	{
-		printf("priority:%d,thread name:%s\n",dead_thread->current_priority,dead_thread->name);
-	}
-}
-FINSH_FUNCTION_EXPORT(list_deadthread,list_deadthread in sys);
 
 rt_thread_t find_thread_by_id(unsigned int id)
 {
@@ -1572,5 +1562,19 @@ void kill(int argc,char **argv)
 }
 FINSH_FUNCTION_EXPORT(kill,kill one thread in sys by id);
 
+static int showThreadStack(int argc, char **argv)
+{
+	if(argc!=2)
+	{
+		printf("showThreadSpMem threadID\n");
+		return 1;
+	}
+	unsigned int id=atoi(argv[1]);
+	rt_thread_t findedThread=find_thread_by_id(id);
+	printf("finded thread name:%s\n",findedThread->name);
+	dataHexPrint(findedThread->stack_addr,findedThread->stack_size,findedThread->name);
+	return 0;
+}
+FINSH_FUNCTION_EXPORT(showThreadStack,showThreadStack by threadID);
 
 

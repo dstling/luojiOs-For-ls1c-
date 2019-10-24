@@ -806,6 +806,6 @@ int rt_hw_eth_init(void)
 	thread_join_init("hw_eth_init",hw_eth_init_thread_entry,NULL,2048,13,100);
 	return 0;
 }
-FINSH_FUNCTION_EXPORT(rt_hw_eth_init,rt_hw_eth_init in sys);
+//FINSH_FUNCTION_EXPORT(rt_hw_eth_init,rt_hw_eth_init in sys);
 
 

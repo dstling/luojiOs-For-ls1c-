@@ -1,9 +1,14 @@
+#include <buildconfig.h>
+
+#if BUILD_TEST_FUN
 #include <stdio.h>
 #include "rtdef.h"
 #include "shell.h"
 
-extern struct rt_thread *rt_current_thread;
+#include "queue.h"
+#include "filesys.h"
 
+extern struct rt_thread *rt_current_thread;
 
 //所有的测试函数
 void hello(void)
@@ -391,22 +396,113 @@ long deadThread_jointhread(void)
 }
 FINSH_FUNCTION_EXPORT(deadThread_jointhread,deadThread_jointhread in sys);
 
+extern rt_list_t rt_thread_dead;//死亡线程
+void list_deadthread(void)
+{
+	struct rt_thread *dead_thread;
+	if (!rt_list_isempty(&rt_thread_dead))
+	rt_list_for_each_entry(dead_thread,&rt_thread_dead,tlist)
+	{
+		printf("priority:%d,thread name:%s\n",dead_thread->current_priority,dead_thread->name);
+	}
+}
+FINSH_FUNCTION_EXPORT(list_deadthread,list_deadthread in sys);
+
+extern unsigned int rt_interrupt_nest;
+void show_irq_nest(void)//打印中断嵌套数值 >1说明中断嵌套了 1说明处在禁止中断状态
+{
+	printf("rt_interrupt_nest:%d\n",rt_interrupt_nest);
+}
+FINSH_FUNCTION_EXPORT(show_irq_nest,show_irq_nest in sys);
 
 
-static int showThreadSpMem(int argc, char **argv)
+int readSpiFlashHex(int ac, char **argv)//读取rom中的hex数据
+{
+	char ret=0;
+	unsigned int addr=0;
+	unsigned int read_data_len=0;
+	unsigned int readed_len=0;
+	static char readbuf[512];
+	printf("read_flash_data_cmd().\n");
+	if(ac<3)
+	{
+		printf("useage: read_flash_data addr 32\n");
+		return 0;
+	}
+
+	char * pt=argv[1]+2;//0x001234
+	ret=panduan_hex(pt);
+	if(ret==0)
+	{
+		printf("arg 1 not a hex addr.for example:0x12345678\n");
+		return 0;
+	}
+	addr=str_to_hex(pt);
+	read_data_len=atoi(argv[2]);
+	printf("addr:0x%08X readlen:%d\n",addr,read_data_len);
+
+	while(readed_len<read_data_len)
+	{
+		if(read_data_len-readed_len>512)
+		{
+			read_flash_data(addr,512,readbuf);
+			show_hex(readbuf,512,addr);
+			addr+=512;
+			readed_len+=512;
+		}
+		else
+		{
+			read_flash_data(addr,read_data_len-readed_len,readbuf);
+			show_hex(readbuf,read_data_len-readed_len,addr);
+			break;
+		}
+	}
+	
+    return (1);
+}
+FINSH_FUNCTION_EXPORT(readSpiFlashHex,readSpiFlashHex in sys);
+
+extern struct tftpFileStru tftpOpenfile;
+void romBufShow(int argc ,char**argv)
+{
+	if(argc!=3)
+	{
+		printf("useage: romBufShow offsetHexAddr len \n");
+		return;
+	}
+	
+	char *argv1=malloc(strlen(argv[1])+1);
+	memset(argv1,0,strlen(argv[1])+1);
+	memcpy(argv1,argv[1],strlen(argv[1]));
+	printf("argv1:%s\n",argv1);
+	
+	int offset=str_to_hex(argv1);
+	int len=atoi(argv[2]);
+	printf("offset:0x%08x,len:%d\n",offset,len);
+	if(len<0)                                                                      
+	{
+		printf("len error <0.\n");
+		return;
+	}
+	dataHexPrint2(tftpOpenfile.recvBuf,len,offset,"tftpOpenfile.recvBuf");
+	free(argv1);
+}
+FINSH_FUNCTION_EXPORT(romBufShow,romBufShow tftp datas);
+
+extern unsigned int tftpEveryReadSize;
+void setTftpEverySize(int argc,char**argv)//设置tftp每次读取数据大小的测试函数
 {
 	if(argc!=2)
 	{
-		printf("showThreadSpMem threadID\n");
-		return 1;
+		printf("useage: setTftpEverySize size \n");
+		return;
 	}
-	unsigned int id=atoi(argv[1]);
-	rt_thread_t findedThread=find_thread_by_id(id);
-	printf("finded thread name:%s\n",findedThread->name);
-	dataHexPrint(findedThread->stack_addr,findedThread->stack_size,findedThread->name);
-	return 0;
+	tftpEveryReadSize=atoi(argv[1]);
 }
-FINSH_FUNCTION_EXPORT(showThreadSpMem,showThreadSpMem in sys);
+FINSH_FUNCTION_EXPORT(setTftpEverySize,setTftpEverySize size);
+
+#endif
+
 
 
 

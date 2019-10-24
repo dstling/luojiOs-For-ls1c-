@@ -1,9 +1,9 @@
 
 #include <stdio.h>
-#include "queue.h"
-#include "filesys.h"
 #include <shell.h>
 #include <rtdef.h>
+#include "queue.h"
+#include "filesys.h"
 
 #define DEBUG_FILESYS
 
@@ -310,14 +310,8 @@ int filefs_init(FileSystem *fs)
 //=============================================================================
 
 unsigned int tftpEveryReadSize=512;
-struct tftpFileStru{
-	char tftpOpenAddr[128];
-	unsigned int openMode;
-	char * recvBuf;
-	unsigned int recvLen;
-};
-struct tftpFileStru tftpOpenfile;
 int tftpBufSize=100*1024;
+struct tftpFileStru tftpOpenfile;
 
 void tftpOpenEntry(void*userdata)
 {
@@ -421,42 +415,7 @@ void updateLuojios(void)
 }
 FINSH_FUNCTION_EXPORT(updateLuojios,flash new bootloader by tftp);
 
-void romBufShow(int argc ,char**argv)
-{
-	if(argc!=3)
-	{
-		printf("useage: romBufShow offsetHexAddr len \n");
-		return;
-	}
-	
-	char *argv1=malloc(strlen(argv[1])+1);
-	memset(argv1,0,strlen(argv[1])+1);
-	memcpy(argv1,argv[1],strlen(argv[1]));
-	printf("argv1:%s\n",argv1);
-	
-	int offset=str_to_hex(argv1);
-	int len=atoi(argv[2]);
-	printf("offset:0x%08x,len:%d\n",offset,len);
-	if(len<0)                                                                      
-	{
-		printf("len error <0.\n");
-		return;
-	}
-	dataHexPrint2(tftpOpenfile.recvBuf,len,offset,"tftpOpenfile.recvBuf");
-	free(argv1);
-}
-FINSH_FUNCTION_EXPORT(romBufShow,romBufShow tftp datas);
 
-void setTftpEverySize(int argc,char**argv)
-{
-	if(argc!=2)
-	{
-		printf("useage: setTftpEverySize size \n");
-		return;
-	}
-	tftpEveryReadSize=atoi(argv[1]);
-}
-FINSH_FUNCTION_EXPORT(setTftpEverySize,setTftpEverySize size);
 
 
 
