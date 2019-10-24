@@ -4,26 +4,15 @@
 #include <shell.h>
 #include <env.h>
 
-#define BOOT_ROM_SIZE 256 //KB 被4整除即可
+#define NVRAM_OFFS			0							//参数保存位置偏移 这里不偏移
+#define NVRAM_SECSIZE		(4*1024) 					//环境变量空间 4k=4096byte 默认包含在256kB的空间尾部 之所以是4k，是为了环境变量参数重写入flash 最小4k擦除 免得破坏其他数据
+#define BOOT_ROM_SIZE 		256 						//单位KB 被4整除即可 编译完此bin后，确认下有没有大于这个值，大了务必调整
+int 	bootRomSize		=	(BOOT_ROM_SIZE*1024);		//boot rom 存储在flash的前bootRomSize内 必须4k对齐
 
-#define NVRAM_OFFS			0
-#define NVRAM_SECSIZE		(4*1024) //环境变量空间 4k=4096byte 默认包含在256kB的空间尾部 之所以是4k，是为了环境变量参数重写入flash 最小4k擦除 免得破坏其他数据
-#define NVRAM_POS			(bootRomSize-NVRAM_SECSIZE)	//该地址之前的空间用于存储PMON程序
+#define NVRAM_POS			(bootRomSize-NVRAM_SECSIZE)	//该地址之前的空间用于存储PMON程序 
 
-#define NVRAM_SPECIAL_SIZE	(NVRAM_SECSIZE-30)	//重要环境变量保留空间 如下皆是
-#define ETHER_OFFS			(NVRAM_SECSIZE-6) 	// Ethernet address base 
-#define PLL_OFFS			(NVRAM_SECSIZE-16)
-#define XRES_OFFS			(NVRAM_SECSIZE-18)
-#define YRES_OFFS			(NVRAM_SECSIZE-20)
-#define DEPTH_OFFS			(NVRAM_SECSIZE-22)
-
-
-//改良原PMON空间分配布局
-int bootRomSize	=(BOOT_ROM_SIZE*1024);	//boot rom 存储在flash的前bootRomSize内 必须4k对齐
-
-static int nvram_invalid = 0;
-
-#define NVAR	64	//设置参数的最大数目
+static int nvram_invalid =	0;							//配置参数可用标志
+#define NVAR				64							//配置参数的最大数目
 struct envpair {
     char	*name;
     char	*value;
@@ -196,7 +185,7 @@ void resetNorEnvSpace(void)
 		memset(nvrambuf, -1,NVRAM_SECSIZE);//NVRAM_SPECIAL_SIZE
 		nvrambuf[2] = '\0';
 		nvrambuf[3] = '\0';
-		cksum((void *)nvrambuf, NVRAM_SPECIAL_SIZE, 1);
+		cksum((void *)nvrambuf,NVRAM_SECSIZE, 1);//NVRAM_SPECIAL_SIZE
 		printf("Warning! Checksum Env datas fail in norFlash. Reset at norFlash Adddress:0X%08X\n",bootRomSize-NVRAM_SECSIZE);
 		//show_hex(nvramsecbuf,NVRAM_SECSIZE,0);
 		nvram_put(nvramsecbuf);
@@ -233,7 +222,7 @@ int unset_rom_env(char *name)//清除已经存在的name参数
 	nvram_get(nvram);
 	ep = nvrambuf + 2;
 	
-	while ((*ep != '\0') && (ep < nvrambuf + NVRAM_SPECIAL_SIZE)) 
+	while ((*ep != '\0') && (ep < nvrambuf +NVRAM_SECSIZE )) //NVRAM_SPECIAL_SIZE
 	{
 		np = name;
 		sp = ep;
@@ -246,7 +235,7 @@ int unset_rom_env(char *name)//清除已经存在的name参数
 		if ((*np == '\0') && ((*ep == '\0') || (*ep == '='))) 
 		{
 			while (*ep++);
-			while (ep < nvrambuf + NVRAM_SPECIAL_SIZE) 
+			while (ep < nvrambuf + NVRAM_SECSIZE) //
 			{
 				*sp++ = *ep++;
 			}
@@ -254,7 +243,7 @@ int unset_rom_env(char *name)//清除已经存在的name参数
 			{
 				nvrambuf[3] = '\0';
 			}
-			cksum(nvrambuf, NVRAM_SPECIAL_SIZE, 1);//修改了 重新计算
+			cksum(nvrambuf, NVRAM_SECSIZE, 1);//NVRAM_SPECIAL_SIZE修改了 重新计算
 			nvram_put(nvram);
 			status = 1;//找到了
 			break;
@@ -316,7 +305,7 @@ int set_rom_env(char *name, char *value)//更新rom中的环境变量设置
 			} while(*ep++ != '\0');
 			ep--;
 		}
-		if(((int)ep + NVRAM_SPECIAL_SIZE - (int)ep) < (envlen + 1)) //空间不够了
+		if(((int)ep +NVRAM_SECSIZE  - (int)ep) < (envlen + 1)) //空间不够了NVRAM_SPECIAL_SIZE
 		{
 			free(nvramsecbuf);
 			return(0);		// Bummer!
@@ -337,7 +326,7 @@ int set_rom_env(char *name, char *value)//更新rom中的环境变量设置
 		}
 		*ep++ = '\0';	// End of env strings
 	}
-	cksum(nvrambuf, NVRAM_SPECIAL_SIZE, 1);
+	cksum(nvrambuf,NVRAM_SECSIZE , 1);//NVRAM_SPECIAL_SIZE
 	
 	// Etheraddr is special case to save space 
 	/*
@@ -438,7 +427,7 @@ void map_rom_env(void)//从rom flash中获取配置信息
 	memset(nvram,0,NVRAM_SECSIZE);
 	
 	nvram_get(nvram);//从rom中读取配置数据
-	if(cksum(nvram, NVRAM_SPECIAL_SIZE, 0) != 0) //检验数据失败 清除空间
+	if(cksum(nvram,NVRAM_SECSIZE , 0) != 0) //检验数据失败 清除空间 NVRAM_SPECIAL_SIZE
 	{
 		nvram_invalid = 1;//复位后置可用标志
 		resetNorEnvSpace();
@@ -455,7 +444,7 @@ void map_rom_env(void)//从rom flash中获取配置信息
 		{
 			char *val = 0, *p = env;
 			i = 0;
-			while((*p++ = *ep++) && (ep <= nvram + NVRAM_SPECIAL_SIZE - 1) && i++ < 255)//最多读255？ 
+			while((*p++ = *ep++) && (ep <= nvram +NVRAM_SECSIZE  - 1) && i++ < 255)//最多读255？ NVRAM_SPECIAL_SIZE
 			{
 				if((*(p - 1) == '=') && (val == NULL)) 
 				{
@@ -464,7 +453,7 @@ void map_rom_env(void)//从rom flash中获取配置信息
 				}
 			}
 			
-			if(ep <= nvram + NVRAM_SPECIAL_SIZE - 1 && i < 255) 
+			if(ep <= nvram +NVRAM_SECSIZE  - 1 && i < 255) //NVRAM_SPECIAL_SIZE
 			{
 				set_mem_env(env, val);
 				
