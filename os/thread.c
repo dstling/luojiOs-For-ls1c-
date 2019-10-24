@@ -259,11 +259,7 @@ long rt_timer_stop(rt_timer_t timer)
     /* disable interrupt */
 
     //_rt_timer_remove(timer);
-<<<<<<< HEAD
     rt_list_remove(&timer->timelist);
-=======
-    rt_list_remove(&(timer->timelist));
->>>>>>> d332a5231042144c9e4ec89f537f4f11a5392398
 
 
     /* change stat */
@@ -555,25 +551,6 @@ void threadTask(void)
 	rt_hw_interrupt_enable(level);
 }
 
-<<<<<<< HEAD
-=======
-int thread_start(void)
-{
-	unsigned long priorityint;
-	struct rt_thread *to_thread=_get_highest_priority_thread(&priorityint);
-	printf("thread_start priorityint:%d,name:%s\n",priorityint,to_thread->name);
-	rt_current_thread = to_thread;
-
-	rt_schedule_remove_thread(to_thread);//从当前优先级的链表中移除
-	to_thread->statu=RT_THREAD_RUNNING;
-	
-	//threadStartFlag=1;
-	rt_hw_context_switch_to((unsigned long)&to_thread->sp);//切换运行第一优先级程序 永不回头
-
-	return 0;
-}
-
->>>>>>> d332a5231042144c9e4ec89f537f4f11a5392398
 long rt_thread_suspend(rt_thread_t thread,char statu)//挂起线程
 {
     register long stat;
