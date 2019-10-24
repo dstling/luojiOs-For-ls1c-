@@ -1,7 +1,11 @@
 龙芯1C裸机库+多线程+shell
 
 闲来无事，给裸机加上多线程和shell
+<<<<<<< HEAD
 风格完全是裸机化，方便学习和追踪
+=======
+风格完全是裸机化，方便追踪和学习
+>>>>>>> d332a5231042144c9e4ec89f537f4f11a5392398
 luojiOs bug基本消除了，可以完美运行了
 
 裸机增加多线程和shell交互是有用的，方便调试，调试完成后屏蔽多线程入口，加入纯裸接口即可
@@ -16,9 +20,16 @@ rtthread 龙芯1C的部分默认用的编译器是mips-sde-elf
 
 而裸机OS这里使用的编译器是官方的gcc-4.3-ls232，这里提供下
 环境在虚拟机中设置
+<<<<<<< HEAD
 export PATH=$PATH:$PATH:/home/opt/gcc-4.3-ls232/bin/（虚拟机内编译器解压的绝对路径）
 cd /home/luojiN/OpenLoongsonLib1c20190726/src/ (该代码在虚拟机中的绝对路径)
 make
+=======
+export PATH=$PATH:/home/luojiN/OpenLoongsonLib1c20190726/src/（你的路径 ）
+cd  /home/luojiN/OpenLoongsonLib1c20190726/src/（你的路径）
+make
+=============================
+>>>>>>> d332a5231042144c9e4ec89f537f4f11a5392398
 
 =============================
 白菜板内存8M 直接可以编译运行
