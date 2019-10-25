@@ -1394,7 +1394,7 @@ err_t ethernet_input(struct pbuf *p, struct netif *netif)
   return ERR_OK;
 
 free_and_return:
-	printf("free_and_return\n");
+	LWIP_DEBUGF(ETHARP_DEBUG,("%s %s:%d,free_and_return\n",__FILE__ , __func__, __LINE__));
   pbuf_free(p);
   return ERR_OK;
 }
