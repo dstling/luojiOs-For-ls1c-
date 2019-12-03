@@ -41,6 +41,10 @@
 #ifndef _SYS_ENDIAN_H_
 #define _SYS_ENDIAN_H_
 
+//#define BYTE_ORDER 1234
+
+//#define LITTLE_ENDIAN	1234
+//#define BIG_ENDIAN	4321
 
 #ifdef __MIPSEL__
 #define BYTE_ORDER 1234

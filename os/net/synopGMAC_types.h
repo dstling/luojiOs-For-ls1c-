@@ -13,6 +13,7 @@
 #ifndef __TYPES__H
 #define __TYPES__H
 
+///*
 typedef unsigned char uint8_t;
 typedef unsigned long long  u64;
 typedef unsigned int u32;
@@ -21,6 +22,7 @@ typedef unsigned char u8;
 typedef signed int s32;
 
 typedef u32 dma_addr_t;
+//*/
 
 #define rt_kprintf printf
 #define rt_malloc		malloc

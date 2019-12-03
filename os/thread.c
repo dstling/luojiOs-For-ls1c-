@@ -127,9 +127,20 @@ const unsigned char __lowest_bit_bitmap[] =
 };
 
 register unsigned int $GP __asm__ ("$28");
-unsigned char *rt_hw_stack_init(void *tentry, void *parameter, unsigned char *stack_addr, void *texit)
+/*
+unsigned int *load_a0=NULL;;
+unsigned int *load_a1=NULL;;
+unsigned int *load_a2=NULL;;
+unsigned int *load_a3=NULL;;
+unsigned int *load_sr=NULL;;
+unsigned int *load_sp=NULL;;
+unsigned int *load_pc=NULL;;
+*/
+unsigned char *rt_hw_stack_init(void *tentry, void *parameter,unsigned int stack_top, void *texit,struct rt_thread *thisThread)
 {
-	unsigned int *stk;
+	thisThread->tf=(struct threadframe*)(stack_top-sizeof(struct threadframe));
+	struct threadframe *tf=thisThread->tf;//(struct threadframe *)(stack_top-sizeof(struct threadframe));
+	//unsigned int *stk;
     static unsigned int g_sr = 0;
 	static unsigned int g_gp = 0;
 
@@ -144,51 +155,71 @@ unsigned char *rt_hw_stack_init(void *tentry, void *parameter, unsigned char *st
 
 	//printf("tentry:0x%08x,stack_addr:0x%08x,g_sr:0x%08x,g_gp0x%08x\n",tentry,stack_addr,g_sr,g_gp);
 
-
     /** Start at stack top */
-    stk = (unsigned int *)stack_addr;
-	*(stk)   = (unsigned int) tentry;       /* pc: Entry Point */
-	*(--stk) = (unsigned int) 0xeeee; 		/* c0_cause */
-	*(--stk) = (unsigned int) 0xffff;		/* c0_badvaddr */
-	*(--stk) = (unsigned int) cp0_get_lo();	/* lo */
-	*(--stk) = (unsigned int) cp0_get_hi();	/* hi */
-	*(--stk) = (unsigned int) g_sr; 		/* C0_SR: HW2 = En, IE = En */
-	*(--stk) = (unsigned int) texit;	    /* ra */
-	*(--stk) = (unsigned int) 0x0000001e;	/* s8 */
-	*(--stk) = (unsigned int) stack_addr;	/* sp */
-	*(--stk) = (unsigned int) g_gp;	        /* gp */
-	*(--stk) = (unsigned int) 0x0000001b;	/* k1 */
-	*(--stk) = (unsigned int) 0x0000001a;	/* k0 */
-	*(--stk) = (unsigned int) 0x00000019;	/* t9 */
-	*(--stk) = (unsigned int) 0x00000018;	/* t8 */
-	*(--stk) = (unsigned int) 0x00000017;	/* s7 */
-	*(--stk) = (unsigned int) 0x00000016;	/* s6 */
-	*(--stk) = (unsigned int) 0x00000015;	/* s5 */
-	*(--stk) = (unsigned int) 0x00000014;	/* s4 */
-	*(--stk) = (unsigned int) 0x00000013;	/* s3 */
-	*(--stk) = (unsigned int) 0x00000012;	/* s2 */
-	*(--stk) = (unsigned int) 0x00000011;	/* s1 */
-	*(--stk) = (unsigned int) 0x00000010;	/* s0 */
-	*(--stk) = (unsigned int) 0x0000000f;	/* t7 */
-	*(--stk) = (unsigned int) 0x0000000e;	/* t6 */
-	*(--stk) = (unsigned int) 0x0000000d;	/* t5 */
-	*(--stk) = (unsigned int) 0x0000000c;	/* t4 */
-	*(--stk) = (unsigned int) 0x0000000b;	/* t3 */
-	*(--stk) = (unsigned int) 0x0000000a; 	/* t2 */
-	*(--stk) = (unsigned int) 0x00000009;	/* t1 */
-	*(--stk) = (unsigned int) 0x00000008;	/* t0 */
-	*(--stk) = (unsigned int) 0x00000007;	/* a3 */
-	*(--stk) = (unsigned int) 0x00000006;	/* a2 */
-	*(--stk) = (unsigned int) 0x00000005;	/* a1 */
-	*(--stk) = (unsigned int) parameter;	/* a0 */
-	*(--stk) = (unsigned int) 0x00000003;	/* v1 */
-	*(--stk) = (unsigned int) 0x00000002;	/* v0 */
-	*(--stk) = (unsigned int) 0x00000001;	/* at */
-	*(--stk) = (unsigned int) 0x00000000;	/* zero */
+    //stk = (unsigned int *)stack_addr;
+	
+	tf->pc   = (unsigned int) tentry;       /* pc: Entry Point */
+	//load_pc=&(tf->pc);
+	
+	tf->cause = (unsigned int) 0;//0xeeee; 		/* c0_cause */
+	tf->badvaddr = (unsigned int) 0;//0xffff;		/* c0_badvaddr */
+	
+	tf->mullo = (unsigned int) 0;//cp0_get_lo();	/* lo */
+	tf->mulhi = (unsigned int) 0;//cp0_get_hi();	/* hi */
+	
+	tf->sr = (unsigned int) g_sr; 		/* C0_SR: HW2 = En, IE = En */
+	//load_sr=&(tf->sr);
+	
+	tf->ra = (unsigned int) texit;	    /* ra */
+	tf->s8 = (unsigned int) 0;//0x0000001e;	/* s8 */
+	
+	tf->sp = (unsigned int) stack_top;//(tf+sizeof(struct threadframe));	/* sp */ //在stack的顶部-4的位置了
+	//load_sp=&(tf->sp);
+	
+	tf->gp = (unsigned int) g_gp;	        /* gp */
+	
+	tf->k1 = (unsigned int) 0;//0x0000001b;	/* k1 */
+	tf->k0 = (unsigned int) 0;//0x0000001a;	/* k0 */
+	
+	tf->t9 = (unsigned int) 0;//0x00000019;	/* t9 */
+	tf->t8 = (unsigned int) 0;//0x00000018;	/* t8 */
+	
+	tf->s7 = (unsigned int) 0;//0x00000017;	/* s7 */
+	tf->s6 = (unsigned int) 0;//0x00000016;	/* s6 */
+	tf->s5 = (unsigned int) 0;//0x00000015;	/* s5 */
+	tf->s4 = (unsigned int) 0;//0x00000014;	/* s4 */
+	tf->s3 = (unsigned int) 0;//0x00000013;	/* s3 */
+	tf->s2 = (unsigned int) 0;//0x00000012;	/* s2 */
+	tf->s1 = (unsigned int) 0;//0x00000011;	/* s1 */
+	tf->s0 = (unsigned int) 0;// 0x00000010;	/* s0 */
+	
+	tf->t7 = (unsigned int) 0;//0x0000000f;	/* t7 */
+	tf->t6 = (unsigned int) 0;//0x0000000e;	/* t6 */
+	tf->t5 = (unsigned int) 0;//0x0000000d;	/* t5 */
+	tf->t4 = (unsigned int) 0;//0x0000000c;	/* t4 */
+	tf->t3 = (unsigned int) 0;//0x0000000b;	/* t3 */
+	tf->t2 = (unsigned int) 0;//0x0000000a; 	/* t2 */
+	tf->t1 = (unsigned int) 0;//0x00000009;	/* t1 */
+	tf->t0 = (unsigned int) 0;//0x00000008;	/* t0 */
+	
+	tf->a3 = (unsigned int) 0;//0x00000007;	/* a3 */
+	//load_a3=&(tf->a3);
+	tf->a2 = (unsigned int) 0;//0x00000006;	/* a2 */
+	//load_a2=&(tf->a2);
+	tf->a1 = (unsigned int) 0;//0x00000005;	/* a1 */
+	//load_a1=&(tf->a1);
+	tf->a0 = (unsigned int) parameter;	/* a0 */
+	//load_a0=&(tf->a0);
+	
+	tf->v1 = (unsigned int) 0;//0x00000003;	/* v1 */
+	tf->v0 = (unsigned int) 0;//0x00000002;	/* v0 */
+	tf->at = (unsigned int) 0;//0x00000001;	/* at */
+	tf->zero = (unsigned int) 0;//0x00000000;	/* zero */
 
 	/* return task's current stack address */
-	return (unsigned char *)stk;
+	return (unsigned char *)&tf->zero;//返回的是stack的底部
 }
+
 
 int __rt_ffs(int value)
 {
@@ -239,7 +270,10 @@ static void _rt_scheduler_stack_check(struct rt_thread *thread)
 		}
 		level = rt_hw_interrupt_disable();
 		while(1)
-			printf("shutdown._rt_scheduler_stack_check.\n");
+		{
+			printf("shutdown._rt_scheduler_stack_check overflow.\n");
+			delay_ms(1000);
+		}
 	}
 }
 
@@ -650,7 +684,7 @@ long  rt_thread_delay(unsigned int tick)
 {
     return rt_thread_sleep(tick);
 }
-static unsigned int threadIdIndex=0;
+static unsigned int threadIdIndex=1;
 rt_thread_t thread_join_init(char* thread_name,void (*fun)(void *userdata),void *userdata,int stackSize,int priority,int runtick)
 {
 	register long level;
@@ -710,10 +744,12 @@ rt_thread_t thread_join_init(char* thread_name,void (*fun)(void *userdata),void 
 	rt_list_insert_after(&rt_all_thread,&(newThread->allList));
 	
 	newThread->number_mask = 1L << newThread->current_priority;//0~31
-	
-	newThread->sp=rt_hw_stack_init(fun,userdata,newThread->stack_addr+newThread->stack_size-sizeof(unsigned long),rt_thread_exit);
+
+	unsigned int stack_top=newThread->stack_addr+newThread->stack_size-sizeof(unsigned long);
+	//newThread->tf=(struct threadframe*)(stack_top-sizeof(struct threadframe));
+	newThread->sp=rt_hw_stack_init(fun,userdata,stack_top,rt_thread_exit,newThread);
     newThread->statu = RT_THREAD_READY;
-	
+
 	rt_thread_ready_priority_group |= newThread->number_mask;
     rt_list_insert_before(&(rt_thread_priority_table[newThread->current_priority]),&(newThread->tlist));
 	
@@ -723,7 +759,7 @@ rt_thread_t thread_join_init(char* thread_name,void (*fun)(void *userdata),void 
 	return newThread;
 }
 
-void idle_thread(void*userdata)//空闲线程 做一些死掉的线程清理工作
+void idle_thread_entry(void*userdata)//空闲线程 做一些死掉的线程清理工作
 {
 	//int count=0;
 	struct rt_thread *dead_thread,*posTmp;

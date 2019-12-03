@@ -3,6 +3,7 @@
 
 //#define RT_DEBUG
 #ifdef RT_DEBUG
+#define	MEM_DEBUG(format,args...) printf("MEM_DEBUG: " format "", ## args)
 #define RT_DEBUG_MEM                   1
 #define RT_DEBUG_LOG(type, message)                                           \
 	do                                                                            \
@@ -12,6 +13,7 @@
 	}                                                                             \
 	while (0)
 #else
+	#define	MEM_DEBUG(format,args...)
 	#define RT_DEBUG_LOG(type, message)
 #endif
 
@@ -137,14 +139,16 @@ static void plug_holes(struct heap_mem *mem)
  * @param begin_addr the beginning address of system heap memory.
  * @param end_addr the end address of system heap memory.
  */
-
-
+extern char end_rom[];//系统编译完成后确定 变量在链接脚本ld.script中定义
+extern unsigned int reserve_mem_space;
 void rt_system_heap_init(void *begin_addr, void *end_addr)//用的这个
 {
     struct heap_mem *mem;
 	
     //printf("mem init, begin_addr address 0x%x,end_addr address 0x%x.\n",(rt_ubase_t)begin_addr, end_addr);
 
+	//begin_addr=reserve_mem_space+1024*1024;//保留1M空间
+	
 	rt_ubase_t begin_align = RT_ALIGN((rt_ubase_t)begin_addr, RT_ALIGN_SIZE);
     rt_ubase_t end_align   = RT_ALIGN_DOWN((rt_ubase_t)end_addr, RT_ALIGN_SIZE);
 
@@ -162,7 +166,6 @@ void rt_system_heap_init(void *begin_addr, void *end_addr)//用的这个
     {
         printf("mem init, error begin address 0x%x, and end address 0x%x\n",
                    (rt_ubase_t)begin_addr, (rt_ubase_t)end_addr);
-
         return;
     }
 
@@ -171,8 +174,9 @@ void rt_system_heap_init(void *begin_addr, void *end_addr)//用的这个
 
     RT_DEBUG_LOG(RT_DEBUG_MEM, ("mem init, heap begin address 0x%x, size %d,end address 0x%x.\n",
                                 (rt_ubase_t)heap_ptr, mem_size_aligned,end_align));
-    printf("mem init, heap begin address 0x%x, size %d,end address 0x%x.\n",(rt_ubase_t)heap_ptr, mem_size_aligned,end_align);
-
+    printf("mem init, heap begin address 0x%x, size %d,end address 0x%x,reserve_mem_space 0x%x,end_rom 0x%x\n",
+		(rt_ubase_t)heap_ptr, mem_size_aligned,end_align,reserve_mem_space,end_rom);
+	//MEM_DEBUG
 	/*
 	//测试内存
 	memset(heap_ptr,'#',mem_size_aligned);
@@ -191,7 +195,7 @@ void rt_system_heap_init(void *begin_addr, void *end_addr)//用的这个
     mem->next  = mem_size_aligned + SIZEOF_STRUCT_MEM;
     mem->prev  = 0;
     mem->used  = 0;
-	printf("mem:0x%08x,heap_ptr->next:0x%08x\n",(rt_ubase_t)mem,(rt_ubase_t)mem->next);
+	MEM_DEBUG("mem:0x%08x,heap_ptr->next:0x%08x\n",(rt_ubase_t)mem,(rt_ubase_t)mem->next);
 #ifdef RT_USING_MEMTRACE
     rt_mem_setname(mem, "INIT");
 #endif
@@ -202,7 +206,7 @@ void rt_system_heap_init(void *begin_addr, void *end_addr)//用的这个
     heap_end->used  = 1;
     heap_end->next  = mem_size_aligned + SIZEOF_STRUCT_MEM;
     heap_end->prev  = mem_size_aligned + SIZEOF_STRUCT_MEM;
-	printf("heap_end:0x%08x,heap_end->next:0x%08x\n",(rt_ubase_t)heap_end,(rt_ubase_t)heap_end->next);
+	MEM_DEBUG("heap_end:0x%08x,heap_end->next:0x%08x\n",(rt_ubase_t)heap_end,(rt_ubase_t)heap_end->next);
 #ifdef RT_USING_MEMTRACE
     rt_mem_setname(heap_end, "INIT");
 #endif
@@ -656,31 +660,6 @@ void* malloc_align(unsigned int size, unsigned int align)//free还是个问题
 
 
 
-int strncmp(const char *cs,const char *ct, unsigned int count)
-{
-	register signed char __res = 0;
-
-	while (count) {
-		if ((__res = *cs - *ct++) != 0 || !*cs++)
-			break;
-		count--;
-	}
-
-	return __res;
-}
-
-int str_common(const char *str1, const char *str2)
-{
-    const char *str = str1;
-
-    while ((*str != 0) && (*str2 != 0) && (*str == *str2))
-    {
-        str ++;
-        str2 ++;
-    }
-
-    return (str - str1);
-}
 
 int memcmp(const void *cs, const void *ct, unsigned long count)
 {

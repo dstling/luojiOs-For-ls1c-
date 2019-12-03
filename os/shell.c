@@ -569,7 +569,7 @@ void shellInit(void)
     extern const int __fsymtab_start;	//系统编译完成后确定 变量在链接脚本ld.script中定义
     extern const int __fsymtab_end;		//系统编译完成后确定 变量在链接脚本ld.script中定义
 	finsh_system_function_init(&__fsymtab_start, &__fsymtab_end);
-	printf("_syscall_table_begin:0x%08x,_syscall_table_end:0x%08x\n",_syscall_table_begin,_syscall_table_end);
+	//printf("_syscall_table_begin:0x%08x,_syscall_table_end:0x%08x\n",_syscall_table_begin,_syscall_table_end);
 
 	//shell=&shell_mem;
 	shell = (struct finsh_shell *)malloc(sizeof(struct finsh_shell));

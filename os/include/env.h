@@ -3,7 +3,7 @@
 #define ENV_IP_NAME 		"localIp"
 #define ENV_MASK_NAME 		"localMask"
 #define ENV_GATEWAY_NAME 	"localGateway"
-#define ENV_MAC_NAME 		"NetworkMac"
+#define ENV_MAC_NAME 		"ethaddr"
 
 #define ENV_TFTP_SERVER_IP_NAME 		"tftpServerIp"
 #define ENV_TFTP_PMON_FILE_NAME 		"pmonBinName"

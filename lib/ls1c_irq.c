@@ -179,6 +179,10 @@ void irq_init(void)
     return ;
 }
 
+void printf_cp0_sr(int index)
+{
+	printf("printf_cp0_sr,index:%d,status0x%08x\n",index,read_c0_status());
+}
 
 // 禁止中断:设置协处理器0
 void irq_disable_all(void)
@@ -186,9 +190,10 @@ void irq_disable_all(void)
     unsigned int status = 0;
 
     status = read_c0_status();
+	printf("irq_disable_all,status0x%08x\n",status);//0x00400000
     status &= 0xfffffffe;
     write_c0_status(status);
-
+	printf_cp0_sr(0);//0x00400000
     return ;
 }
 
@@ -216,7 +221,8 @@ void exception_init(void)
     irq_disable_all();
 
     // 探测cache类型和大小
-    cache_probe();
+    //cache_probe();
+	CPU_ConfigCache();
 
     // 初始化中断
     irq_init();
@@ -225,27 +231,29 @@ void exception_init(void)
 	irq_set_exception_vector_handler(0x000, &tlb_refill_exception, EXCEPTION_HANDER_MAX_SIZE);//dstling add
     irq_set_exception_vector_handler(0x180, &general_exception, EXCEPTION_HANDER_MAX_SIZE);
     irq_set_exception_vector_handler(0x200, &general_exception, EXCEPTION_HANDER_MAX_SIZE);
+	CPU_FlushCache();
 
     // 设置各个异常的处理函数
     for (i=0; i<EXCEPTION_MAX_NUM; i++)
     {
-        irq_set_one_exception_handler(i, handle_reserved);
+        irq_set_one_exception_handler(i, handle_reserved);//exception_handlers加1
     }
-    irq_set_one_exception_handler(0, handle_int);
+    irq_set_one_exception_handler(0, handle_int);//0号异常
 
     // 先回写整个dcache，再作废整个icache
-    dcache_writeback_invalidate_all();
-    icache_invalidate_all();
+    //dcache_writeback_invalidate_all();
+    //icache_invalidate_all();
 
     /*
      * 设置cp0的寄存器status中的BEV为0
      * 使CPU的异常向量入口为0x80000180
      */
 	CPU_SetSR(0, SR_BOOT_EXC_VEC);
+	printf_cp0_sr(1);//0x00000000
 
     // 使能中断
     irq_enable_all();
-
+	printf_cp0_sr(2);//0x00007c01
     return ;
 }
 

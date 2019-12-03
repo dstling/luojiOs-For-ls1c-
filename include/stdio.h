@@ -3,11 +3,14 @@
 #define _STDIO_
 
 #include <stdarg.h>
-
+//#define __mips 3
 #if __mips >= 3
 #define	HAVE_QUAD	/* QUAD data type native */
 #else
+
 #endif
+
+//#define HAVE_QUAD
 
 
 

@@ -18,25 +18,23 @@
 
 #define RMII
 #define RT_USING_GMAC_INT_MODE
-#define DEFAULT_MAC_ADDRESS 			{0x00, 0x55, 0x7B, 0xB5, 0x7D, 0xF7}
 #define Gmac_base           			0xbfe10000
 u32 	regbase 			=	 		Gmac_base;
 
-#define DEFAULT_IP_ADDRESS 			"192.168.1.2"//"172.0.0.13"
+#define DEFAULT_IP_ADDRESS 			"192.168.1.2"//当系统没有设置IP的时候使用这些配置
 #define DEFAULT_GWADDR_ADDRESS 		"192.168.1.1"//"172.0.0.1"
 #define DEFAULT_MSKADDR_ADDRESS 	"255.255.255.0"
+#define DEFAULT_MAC_ADDRESS			{0x00, 0x55, 0x7B, 0xB5, 0x7D, 0xF7}//当系统没有设置MAC的时候使用这些配置
 
-//static unsigned char default_mac_addr_mem[MAX_ADDR_LEN]=DEFAULT_MAC_ADDRESS;
 static unsigned char mac_addr_mem[MAX_ADDR_LEN]=DEFAULT_MAC_ADDRESS;
-
-unsigned char ip_addr_mem[16]=DEFAULT_IP_ADDRESS;
-unsigned char gateway_addr_mem[16]=DEFAULT_GWADDR_ADDRESS;
-unsigned char mask_addr_mem[16]=DEFAULT_MSKADDR_ADDRESS;
+ unsigned char ip_addr_mem[16]=DEFAULT_IP_ADDRESS;
+ unsigned char gateway_addr_mem[16]=DEFAULT_GWADDR_ADDRESS;
+ unsigned char mask_addr_mem[16]=DEFAULT_MSKADDR_ADDRESS;
 
 struct eth_device  this_eth_dev;
 char this_eth_dev_name[]="e0";
 static u32 GMAC_Power_down;
-static struct rt_semaphore  sem_lock;//sem_ack 这个没用吧
+static struct rt_semaphore  sem_lock;
 
 static int mdio_read(synopGMACPciNetworkAdapter *adapter, int addr, int reg)
 {
@@ -371,15 +369,38 @@ s32 synopGMAC_setup_rx_desc_queue(synopGMACdevice *gmacdev, u32 no_of_desc, u32 
     return -ESYNOPGMACNOERR;
 }
 
+s32 synopGMAC_check_phy_init(synopGMACPciNetworkAdapter *adapter)
+{
+    struct ethtool_cmd cmd;
+    synopGMACdevice            *gmacdev = adapter->synopGMACdev;
+
+    if (!mii_link_ok(&adapter->mii))
+    {
+        gmacdev->DuplexMode = FULLDUPLEX;
+        gmacdev->Speed      =   SPEED100;
+        return 0;
+    }
+    else
+    {
+        mii_ethtool_gset(&adapter->mii, &cmd);
+        gmacdev->DuplexMode = (cmd.duplex == DUPLEX_FULL)  ? FULLDUPLEX : HALFDUPLEX ;
+        if (cmd.speed == SPEED_1000)
+            gmacdev->Speed      =   SPEED1000;
+        else if (cmd.speed == SPEED_100)
+            gmacdev->Speed      =   SPEED100;
+        else
+            gmacdev->Speed      =   SPEED10;
+    }
+    return gmacdev->Speed | (gmacdev->DuplexMode << 4);
+}
 
 void synopGMAC_linux_cable_unplug_function(void *adaptr)
 {
-    s32 data;
+    s32 data=0;
     synopGMACPciNetworkAdapter *adapter = (synopGMACPciNetworkAdapter *)adaptr;
     synopGMACdevice            *gmacdev = adapter->synopGMACdev;
     struct ethtool_cmd cmd;
 
-    //rt_kprintf("%s\n",__FUNCTION__);
     if (!mii_link_ok(&adapter->mii))
     {
         if (gmacdev->LinkState)
@@ -391,8 +412,9 @@ void synopGMAC_linux_cable_unplug_function(void *adaptr)
     }
     else
     {
+		DEBUG_MES("%s,data:0x%08x,gmacdev->LinkState:0x%08x\n", __FUNCTION__,data,gmacdev->LinkState);
         data = synopGMAC_check_phy_init(adapter);
-
+		DEBUG_MES("%s,data:0x%08x,gmacdev->LinkState:0x%08x\n", __FUNCTION__,data,gmacdev->LinkState);
         if (gmacdev->LinkState != data)
         {
             gmacdev->LinkState = data;
@@ -407,35 +429,6 @@ void synopGMAC_linux_cable_unplug_function(void *adaptr)
         }
     }
 }
-
-s32 synopGMAC_check_phy_init(synopGMACPciNetworkAdapter *adapter)
-{
-    struct ethtool_cmd cmd;
-    synopGMACdevice            *gmacdev = adapter->synopGMACdev;
-
-    if (!mii_link_ok(&adapter->mii))
-    {
-        gmacdev->DuplexMode = FULLDUPLEX;
-        gmacdev->Speed      =   SPEED100;
-
-        return 0;
-    }
-    else
-    {
-        mii_ethtool_gset(&adapter->mii, &cmd);
-
-        gmacdev->DuplexMode = (cmd.duplex == DUPLEX_FULL)  ? FULLDUPLEX : HALFDUPLEX ;
-        if (cmd.speed == SPEED_1000)
-            gmacdev->Speed      =   SPEED1000;
-        else if (cmd.speed == SPEED_100)
-            gmacdev->Speed      =   SPEED100;
-        else
-            gmacdev->Speed      =   SPEED10;
-    }
-
-    return gmacdev->Speed | (gmacdev->DuplexMode << 4);
-}
-
 
 void eth_rx_irq(int irqno, void *param)//eth接收中断函数
 {
@@ -643,14 +636,11 @@ long init_eth()//在sys_arch.c中的netif_device_init被调用
                   RT_TICK_PER_SECOND,
                   2);//RT_TIMER_FLAG_PERIODIC
 
-    rt_timer_start(&eth_device->link_timer);
     /* installl isr */
-    DEBUG_MES("%s\n", __FUNCTION__);
     rt_hw_interrupt_install(LS1C_MAC_IRQ, eth_rx_irq, RT_NULL, "e0_isr");
     rt_hw_interrupt_umask(LS1C_MAC_IRQ);
-
-    DEBUG_MES("eth_inited success!\n");
-
+    rt_timer_start(&eth_device->link_timer);
+    DEBUG_MES("%s,eth_inited success!\n", __FUNCTION__);
     return RT_EOK;
 }
 
@@ -701,7 +691,6 @@ void hw_eth_init_thread_entry(void *parameter)
 	static u8 mac_addr0[6] = DEFAULT_MAC_ADDRESS;
 	int index;
 
-	//rt_sem_init(&sem_ack, "tx_ack", 1, RT_IPC_FLAG_FIFO);
 	rt_sem_init(&sem_lock, "eth_lock", 1, RT_IPC_FLAG_FIFO);
 
 	for (index = 21; index <= 30; index++)
@@ -754,7 +743,7 @@ void hw_eth_init_thread_entry(void *parameter)
 	char* macaddrtmp=getenv(ENV_MAC_NAME);
 	if(macaddrtmp!=0)
 	{
-		printf("macaddrtmp:%s\n",macaddrtmp);
+		//printf("macaddrtmp:%s\n",macaddrtmp);
 		mac_str_to_hex(macaddrtmp,mac_addr_mem);
 	}
 	printf("mac addr %02x:%02x:%02x:%02x:%02x:%02x\n",mac_addr_mem[0],mac_addr_mem[1],mac_addr_mem[2],mac_addr_mem[3],mac_addr_mem[4],mac_addr_mem[5]);
@@ -786,7 +775,7 @@ void hw_eth_init_thread_entry(void *parameter)
 	this_eth_dev.eth_tx=rt_eth_tx;
 	this_eth_dev.eth_rx=rt_eth_rx;
 
-	eth_system_device_init();//提前初始换接收和发送线程 priority=14
+	//eth_system_device_init();//提前初始换接收和发送线程 priority=14
 	
 	eth_device_init(&this_eth_dev, this_eth_dev_name);//申请netif接口并初始化
 
@@ -794,18 +783,11 @@ void hw_eth_init_thread_entry(void *parameter)
 	
 	//上面都准备好了 开始初始化lwip的东西 包括tcpip_thread eth接口等
 	lwip_system_init();//lwip_init()在lwip_system_init->tcpip_init中被初始化 
-
+	
+	THREAD_DEAD_EXIT;	
 	return 0;
 }
 
 
-#include "shell.h"
-
-int rt_hw_eth_init(void)
-{
-	thread_join_init("hw_eth_init",hw_eth_init_thread_entry,NULL,2048,13,100);
-	return 0;
-}
-//FINSH_FUNCTION_EXPORT(rt_hw_eth_init,rt_hw_eth_init in sys);
 
 

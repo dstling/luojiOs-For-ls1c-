@@ -32,6 +32,7 @@
  */
 
 #include <types.h>
+#include <stdio.h>
 #include <string.h>
 
 static char * _getbase(char *, int *);
@@ -154,8 +155,7 @@ atob(u_int32_t *vp, char *p, int base)
  *  llatob(vp,p,base) 
  *      converts p to binary result in vp, rtn 1 on success
  */
-int
-llatob(u_quad_t *vp, char *p, int base)
+int llatob(u_quad_t *vp, char *p, int base)
 {
 	if (base == 0)
 		p = _getbase (p, &base);
@@ -214,8 +214,7 @@ char *btoa(char *dst, u_int value, int base)
  *  char *btoa(dst,value,base) 
  *      converts value to ascii, result in dst
  */
-char *
-llbtoa(char *dst, u_quad_t value, int base)
+char *llbtoa(char *dst, u_quad_t value, int base)
 {
 	char buf[66], digit;
 	int i, j, rem, neg;
@@ -235,7 +234,8 @@ llbtoa(char *dst, u_quad_t value, int base)
 		}
 	}
 
-	for (i = 0; value != 0; i++) {
+	for (i = 0; value != 0; i++) 
+	{
 		rem = value % base;
 		value /= base;
 		if (rem >= 0 && rem <= 9)

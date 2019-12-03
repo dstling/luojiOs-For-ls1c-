@@ -5,7 +5,7 @@
 #include "../lib/ls1c_uart.h"
 
 
-#define PRINTF_BUF_SIZE                 (2048)
+#define PRINTF_BUF_SIZE                 (1024)
 static char printfbuf[PRINTF_BUF_SIZE];
 
 extern struct rt_thread *rt_current_thread;
@@ -26,6 +26,9 @@ int printf (const char *fmt, ...)
 
     va_start(ap, fmt);
 	//memset(buf,'\0',PRINTF_BUF_SIZE);
+
+    //len = vfprintf(stdout, fmt, ap);
+
 
     // 格式化字符串
     len = vsprintf (printfbuf, fmt, ap);

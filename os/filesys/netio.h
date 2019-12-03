@@ -19,9 +19,9 @@ struct tftpfile {
     short	flags;
     short	eof;
     int		sock;
-    int 	start;
-    int		end;
-    int		foffs;
+    off_t 	start;//int
+    off_t		end;//int
+    off_t		foffs;//int
     char	buf[PKTSIZE];
 };
 
@@ -58,7 +58,7 @@ typedef struct NetFileOps {
 	int		(*fo_open)	(int, struct Url *, int, int);
 	int		(*fo_read)	(int, void *, int);
 	int		(*fo_write)	(int, const void *, int);
-	long		(*fo_lseek)	(int, long, int);
+	off_t	(*fo_lseek)	(int, off_t, int);
 	int		(*fo_ioctl)	(int, int, void *);
 	int		(*fo_close)	(int);
 	SLIST_ENTRY(NetFileOps)	i_next;
@@ -83,7 +83,7 @@ typedef struct NetFile {
 extern int	netopen (int, const char *, int, int);
 extern int	netread (int, void *, unsigned int);
 extern int	netwrite (int, const void *, size_t);
-extern long	netlseek (int, long, int);
+extern 	off_t netlseek (int fd, off_t offs, int how);
 extern int	netioctl (int, unsigned long, ...);
 extern int	netclose (int);
 extern int	netfs_init (NetFileOps *fs);

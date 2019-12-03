@@ -15,11 +15,11 @@
 //#define GMAC_DEBUG
 
 #ifdef GMAC_DEBUG	
-#define DEBUG_MES	printf
-#define TR0 printf	
-#define TR  printf
+#define DEBUG_MES(format, arg...) printf("GMAC_DEBUG: " format "", ## arg)
+#define TR0(format, arg...) printf("TR0: " format "", ## arg)
+#define TR(format, arg...) printf("TR: " format "", ## arg)
 #else
-#define DEBUG_MES(...)
+#define DEBUG_MES(format, arg...)
 #define TR0(fmt, args...) 		
 #define TR(fmt, args...)  
 #endif

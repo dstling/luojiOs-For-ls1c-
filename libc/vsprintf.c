@@ -31,6 +31,7 @@
  *
  */
  
+#include <types.h>
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -73,8 +74,10 @@ int vsprintf (char *d, const char *s, va_list ap)
 #endif
 
 	dst = d;
-	for (; *s;) {
-		if (*s == '%') {
+	for (; *s;) 
+	{
+		if (*s == '%') 
+		{
 			s++;
 			fmt = FMT_RJUST;
 			width = trunc = haddot = longlong = 0;
@@ -87,12 +90,15 @@ int vsprintf (char *d, const char *s, va_list ap)
 					fmt = FMT_RJUST0;
 				else if (*s == '~')
 					fmt = FMT_CENTER;
-				else if (*s == '*') {
+				else if (*s == '*') 
+				{
 					if (haddot)
 						trunc = va_arg (ap, int);
 					else
 						width = va_arg (ap, int);
-				} else if (*s >= '1' && *s <= '9') {
+				} 
+				else if (*s >= '1' && *s <= '9') 
+				{
 					for (t = s; isdigit (*s); s++);
 					strncpy (tmp, t, s - t);
 					tmp[s - t] = '\0';
@@ -102,38 +108,50 @@ int vsprintf (char *d, const char *s, va_list ap)
 					else
 						width = n;
 					s--;
-				} else if (*s == '.')
+				} 
+				else if (*s == '.')
 					haddot = 1;
 			}
-			if (*s == '%') {
+			if (*s == '%') 
+			{
 				*d++ = '%';
 				*d = 0;
-			} else if (*s == 's') {
+			} 
+			else if (*s == 's') 
+			{
 				p = va_arg (ap, char *);
 
 				if (p)
 					strcpy (d, p);
 				else
 					strcpy (d, "(null)");
-			} else if (*s == 'c') {
+			} 
+			else if (*s == 'c') 
+			{
 				n = va_arg (ap, int);
 				*d = n;
 				d[1] = 0;
-			} else {
-				if (*s == 'l') {
-					if (*++s == 'l') {
+			} 
+			else 
+			{
+				if (*s == 'l') 
+				{
+					if (*++s == 'l') 
+					{
 						longlong = 1;
 						++s;
 					}
 				}
-				if (strchr ("dobpxXu", *s)) {
+				if (strchr ("dobpxXu", *s)) 
+				{
 					if (*s == 'd')
 						base = -10;
 					else if (*s == 'u')
 						base = 10;
 					else if (*s == 'x' || *s == 'X')
 						base = 16;
-					else if(*s == 'p') {
+					else if(*s == 'p') 
+					{
 						base = 16;
 						*d++ = '0';
 						*d++ = 'x';
@@ -146,14 +164,12 @@ int vsprintf (char *d, const char *s, va_list ap)
 						base = 2;
 #ifdef HAVE_QUAD
 					if (longlong)
-						llbtoa(d, va_arg (ap, quad_t),
-						    base);
+						llbtoa(d,va_arg(ap, quad_t),base);
 #else
 					if (longlong)
 					{
-					long x=va_arg (ap, long long);
-						btoa(d, (long)x,
-						    base);
+						long x=va_arg(ap,long long);
+						btoa(d,(long)x,base);
 					}
 
 #endif
@@ -164,7 +180,8 @@ int vsprintf (char *d, const char *s, va_list ap)
 						strtoupper(d);
 				}
 #ifdef FLOATINGPT
-				else if (strchr ("eEfgG", *s)) {
+				else if (strchr ("eEfgG", *s)) 
+				{
 					dbl = va_arg(ap, double);
 					dtoa (d, dbl, *s, width, trunc);
 					trunc = 0;

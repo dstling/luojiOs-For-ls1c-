@@ -28,10 +28,19 @@
 
 /* lwip debug */
 //#define LWIP_DEBUG
+#include <buildconfig.h>
+#include <endian.h>
 
 #define NO_SYS                      0
 #define LWIP_NETCONN                1
 #define LWIP_SOCKET                 1	//使用socket
+
+//#define DEFAULT_THREAD_PRIO         1
+#define TCPIP_THREAD_PRIO			TCPIP_THREAD_PRIO_GLO //tcpip线程优先级 tcpip_init static void tcpip_thread(void *arg) 在api/tcpip.c中 
+#define TCPIP_THREAD_TICK			40		
+
+#define DEFAULT_THREAD_STACKSIZE    (4096)
+#define TCPIP_THREAD_STACKSIZE      DEFAULT_THREAD_STACKSIZE//tcpip线程堆栈区间大小
 
 /* 32-bit alignment */
 #define MEM_ALIGNMENT               4
@@ -95,8 +104,6 @@ extern unsigned char mask_addr_mem[];
 #define RT_LWIP_GWADDR 		gateway_addr_mem		//"172.0.0.1"
 #define RT_LWIP_MSKADDR 	mask_addr_mem			//"255.255.255.0"
 
-#define DEFAULT_THREAD_PRIO             13
-#define DEFAULT_THREAD_STACKSIZE        (4096)
 
 #define LWIP_TCP                    1
 #define TCP_QUEUE_OOSEQ             1
@@ -112,8 +119,6 @@ extern unsigned char mask_addr_mem[];
 #define TCPIP_THREAD_NAME           "tcpip"
 
 #define TCPIP_MBOX_SIZE             (8*3)		//tcpip线程邮箱大小 8貌似有点小啦？
-#define TCPIP_THREAD_STACKSIZE      DEFAULT_THREAD_STACKSIZE
-#define TCPIP_THREAD_PRIO			DEFAULT_THREAD_PRIO
 #define DEFAULT_TCP_RECVMBOX_SIZE		10
 
 #define LWIP_ARP                    1

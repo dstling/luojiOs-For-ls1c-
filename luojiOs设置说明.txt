@@ -3,7 +3,10 @@
 编译前修改os/include/buildconfig.h内的ip地址等信息
 
 ROM空间布局（详见buildconfig.h和env.c）
-bootRomSize=256k NVRAM_SECSIZE=4k时rom空间分配
+#define NVRAM_SECSIZE		(4*1024) 	//环境变量空间 4k=4096byte 默认包含在BOOT_ROM_SIZE kB的空间尾部 之所以是4k，是为了环境变量参数重写入flash 最小4k擦除 免得破坏其他数据
+#define BOOT_ROM_SIZE 		(512-4*10) 		//单位KB 被4整除即可 编译完此bin后，确认下有没有大于这个值，大了务必调整重新编译
+
+
 
 rom空间分配
 ---------------------------------------------------------------------------------------------------------------------------------------------

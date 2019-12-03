@@ -1,6 +1,11 @@
+#ifndef _RTDEF_H_
+#define _RTDEF_H_
+
+
+#include <types.h>
 
 #define RT_THREAD_PRIORITY_MAX 32
-#define RT_TICK_PER_SECOND 1000
+#define RT_TICK_PER_SECOND 1000		//100 也尝试过了
 
 /*
 #define rt_inline					static __inline
@@ -156,43 +161,7 @@ struct rt_timer
 };
 typedef struct rt_timer *rt_timer_t;
 
-struct rt_thread{
-	char 			name[RT_NAME_MAX];
-    unsigned char  	type;                                   /**< type of object */
-    unsigned char  	flags;                                  /**< thread's flags */
-    rt_list_t   	list;                                   /**< the object list */
-	
-    rt_list_t   	tlist;                                  /**< the thread list */
-	rt_list_t		allList;								//用于存储所有的链表
-
-	unsigned int	id;										//thread id dstling add
-	
-	unsigned char current_priority;
-	unsigned char init_priority;
-	
-	unsigned int init_tick;
-	unsigned int remaining_tick;
-
-	unsigned int number_mask;
-
-	void 	*parameter;
-	
-	char 	statu;// 0可运行RUN_ABLE_THREAD    1挂起暂停休眠SLEEP_THREAD 2线程任务结束DEAD_THREAD 可以清理删除
-
-    void       *sp;                                     /**< stack point */
-    void       *entry;                                  /**< entry */
-    void       *stack_addr;                             /**< stack address */
-    unsigned int stack_size;                             /**< stack size */
-
-    long    error;                                  /**< error code */
-
-	//char sleep_flag;
-	//unsigned int sleep_tick_timeup;
-	struct rt_timer thread_timer;
-
-	
-};
-typedef struct rt_thread *rt_thread_t;
+#include <thread.h>
 
 typedef struct rt_device *rt_device_t;
 struct rt_device
@@ -245,4 +214,4 @@ struct rt_device
 //在线程函数退出之前调用下THREAD_DEAD_SLEEP，然后由idle线程去清理掉它
 #define THREAD_DEAD_EXIT ({while(1) rt_thread_dead_exit();})
 
-
+#endif

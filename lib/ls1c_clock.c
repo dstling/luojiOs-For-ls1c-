@@ -146,7 +146,6 @@ void clk_print_all(void)
 //    printf("dc_rate  = %luHz\r\n", dc_rate);
 
     printf("\r\n");
-
     return ;
 }
 

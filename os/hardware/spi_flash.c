@@ -473,7 +473,6 @@ struct fl_map tgt_fl_map_boot16[]={
 	TARGET_FLASH_DEVICES_16
 };
 
-
 struct fl_map * tgt_flashmap(void)
 {
 	return tgt_fl_map_boot16;
@@ -482,20 +481,20 @@ struct fl_map * tgt_flashmap(void)
 struct fl_map *fl_find_map(void *base)
 {
 	struct fl_map *map;
-	for(map = tgt_flashmap(); map->fl_map_size != 0; map++) {
+	for(map = tgt_flashmap(); map->fl_map_size != 0; map++) 
+	{
 		if(map->fl_map_base > (unsigned int)base ||
-		   (map->fl_map_base + map->fl_map_size - 1) < (unsigned int)base) {
+		   (map->fl_map_base + map->fl_map_size - 1) < (unsigned int)base) 
+		{
 			continue;	/* Not this one */
 		}
-		else {
+		else 
+		{
 			return(map);
 		}
 	}
 	return((struct fl_map *)NULL);
 }
-
-
-
 
 int fl_erase_device(void *fl_base, int size, int verbose)
 {
@@ -514,17 +513,18 @@ static struct fl_device *nor_dev;
 struct fl_device *fl_devident(void *base, struct fl_map **m)
 {
 	struct fl_device *dev;
-
 	if(m)
 		*m = fl_find_map(base);
-
-	if (init_id == 0) {
+	if (init_id == 0) 
+	{
 		nor_dev = NULL;
 		read_jedecid(flash_id);
 		init_id = 1;
 
-		for(dev = &fl_known_dev[0]; dev->fl_name != 0; dev++) {
-			if(dev->fl_mfg == (char)flash_id[0] && dev->fl_id == (char)flash_id[2]) {
+		for(dev = &fl_known_dev[0]; dev->fl_name != 0; dev++) 
+		{
+			if(dev->fl_mfg == (char)flash_id[0] && dev->fl_id == (char)flash_id[2]) 
+			{
 				nor_dev = dev;
 				return(dev);	/* GOT IT! */
 			}
@@ -532,6 +532,7 @@ struct fl_device *fl_devident(void *base, struct fl_map **m)
 	}
 	return nor_dev;
 }
+
 static int spi_flash_write_area_sst_AAI(int flashaddr, char *buffer, int size)
 {
 	unsigned char addr2, addr1, addr0;
@@ -646,35 +647,33 @@ static int spi_flash_write_area_fast(int flashaddr, char *buffer, int size)
 	return 0;
 }
 
-int fl_program_device(void *fl_base, void *data_base, int data_size, int verbose)
+int fl_program_device(void *fl_base,void *data_base,int data_size,int verbose)
 {
 	struct fl_map *map;
 	int off;
 
-#if 1
 	fl_devident(fl_base, NULL);
 	map = fl_find_map(fl_base);
 	off = (int)(fl_base - map->fl_map_base) + map->fl_map_offset;
-	if (nor_dev != NULL){
-		if (nor_dev->fl_mfg == (char)0xbf) {
+	if (nor_dev != NULL)
+	{
+		if (nor_dev->fl_mfg == (char)0xbf) 
+		{
 			printf (" byte write %s\n", nor_dev->fl_name);
 			spi_flash_write_area_sst_fast(off, data_base, data_size);	/* SST */
 		}
-		else if (nor_dev->fl_mfg == (char)0xef) {
-			printf (" byte write %s\n", nor_dev->fl_name);
+		else if (nor_dev->fl_mfg == (char)0xef) //here
+		{
+			//printf (" byte write %s\n", nor_dev->fl_name);
+			printf (" %s\n", nor_dev->fl_name);
 			spi_flash_write_area_fast(off, data_base, data_size);		/* winbond */
 		}
 	}
-	else {
+	else 
+	{
 		printf (" byte write unknow flash type\n");
 		spi_flash_write_area(off, data_base, data_size);
 	}
-#else
-	map = fl_find_map(fl_base);
-	off = (int)(fl_base - map->fl_map_base) + map->fl_map_offset;
-	spi_flash_write_area(off,data_base,data_size);
-#endif
-
 	return 0;
 }
 /* spi flash 读使能 */
@@ -798,23 +797,25 @@ int fl_verify_device(void *fl_base, void *data_base, int data_size, int verbose)
 	return(ok);
 }
 
-void tgt_flashprogram(void *p, int size, void *s, int endian)
+void tgt_flashprogram(void *fl_base, int size, void *s, int endian)
 {
 	extern struct spi_device spi_flash;
 
-	printf("Programming flash %x:%x into %x\n", s, size, p);
-	if(fl_erase_device(p, size, 1)) 
+	//printf("Programming flash %dkB(0x%08x) into 0x%x",size/1024,s,fl_base);
+	printf("Programming flash %dkB(0x%08x) into",size/1024,s);
+	if(fl_erase_device(fl_base, size, 1)) 
 	{
 		printf("Erase failed!\n");
 		return;
 	}
-	if(fl_program_device(p, s, size, 1)) 
+	
+	if(fl_program_device(fl_base, s, size, 1)) //写入
 	{
 		printf("Programming failed!\n");
 	}
 
 	ls1x_spi_flash_ren(&spi_flash, 1);
-	fl_verify_device(p, s, size, 1);
+	fl_verify_device(fl_base, s, size, 1);
 	ls1x_spi_flash_ren(&spi_flash, 0);
 }
 

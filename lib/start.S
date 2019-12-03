@@ -1,9 +1,40 @@
-
+/*	$Id: start.S,v 1.1.1.1 2006/09/14 01:59:08 root Exp $ */
 
 /*
- * 汇编文件的扩展名必须是大写的S，不能用小写的s。否则不会执行预处理，
- * 即把#include, #define等这些当作以'#'开头的注释，而忽略掉，最终导致编译错误
+ * Copyright (c) 2001 Opsycon AB  (www.opsycon.se)
+ * 
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Opsycon AB, Sweden.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
+ * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ *
  */
+
+#ifndef _KERNEL
+#define _KERNEL
+#endif
+
 #include "ls1c_regdef.h"
 #include "ls1c_mipsregs.h"
 #include "ls1c_asm.h"
@@ -15,11 +46,13 @@
 #include "sdram_cfg.h"
 
 #define DEBUG_LOCORE
-
+#define LS1CSOC
 
 // 配置调试串口
 #define UART_BASE_ADDR      LS1C_UART2_BASE     // 串口2作为调试串口
 #define CONS_BAUD           B115200             // 波特率115200
+
+#define COM1_BASE_ADDR	0xbfe48000
 
 /* config pll div for cpu and sdram */
 #define PLL_MULT            (0x54)  // 晶振为24Mhz时，PLL=504Mhz
@@ -29,7 +62,17 @@
 // 配置内存大小
 #define MEM_SIZE    (0x02000000)        // 32MByte
 
-
+#	define NVRAM_SECSIZE		4096	/* Helper */
+#	define NVRAM_SIZE		(NVRAM_SECSIZE-30)
+#	define NVRAM_OFFS		0
+#	define NVRAM_POS		0x0007F000
+//#	define NVRAM_POS	    0x000F0000	//当PMON大小超过512K时需要修改该值,保留给环境变量的大小为0x10000=65536字节
+                                        //如果SPI Flash大小为1MB，则NVRAM_POS=0x00100000-0x00010000=0x000F0000
+#	define ETHER_OFFS		(NVRAM_SECSIZE-6) 	/* Ethernet address base */
+#	define PLL_OFFS		(NVRAM_SECSIZE-16)
+#	define XRES_OFFS		(NVRAM_SECSIZE-18)
+#	define YRES_OFFS		(NVRAM_SECSIZE-20)
+#	define DEPTH_OFFS		(NVRAM_SECSIZE-22)
 
 /***********************************MAIN FLOW****************************************/
 
@@ -105,46 +148,32 @@
 	.globl	__main
 _start:
 start:
-    /*
-    设置栈指针为start地址之前0x4000的位置
-    mips架构堆栈寄存器实际只是通用寄存器，并没有规定生长方向，但软件约定“堆栈指针向下生长”
-    */
 	.globl	stack
-stack = (start - 0x4000)		/* Place PMON stack below PMON start in RAM */
+stack = start - 0x4000		/* Place PMON stack below PMON start in RAM */
 
 /* NOTE!! Not more that 16 instructions here!!! Right now it's FULL! */
-/*
-    根据“《see mips run》第5.3节——异常向量：异常处理开始的地方”中的描述，
-    异常向量间的距离为128字节(0x80)，可容纳32条指令（每条指令4字节）。
-    而这里原来的英文注释为“ Not more that 16 instructions here!!!”，即最大16条指令
-    我认为需要进一步斟酌，到底是最大16字节，还是32字节
-*/
-	mtc0	zero, COP_0_STATUS_REG  // 清零cp0 status寄存器
-	mtc0	zero, COP_0_CAUSE_REG   // 清零cp0 cause寄存器
-
-    /*
-    设置启动异常向量入口地址为ROM地址(0xbfc00000)
-    将寄存器cp0 status的BEV置1，使CPU采用ROM(kseg1)空间的异常入口点
-    */
+	mtc0	zero, COP_0_STATUS_REG
+	mtc0	zero, COP_0_CAUSE_REG
 	li	t0, SR_BOOT_EXC_VEC	/* Exception to Boostrap Location */
 	mtc0	t0, COP_0_STATUS_REG
-	
-	la	sp, stack       // 加载栈地址
-	la	gp, _gp         // 加载全局指针gp
+	la	sp, stack
+	la	gp, _gp
 
 	/* initialize spi */
-	li  t0, 0xbfe80000      //地址0xbfe80000为SPI0的寄存器基地址
-	li  t1, 0x17	        // div 4, fast_read + burst_en + memory_en double I/O 模式 部分SPI flash可能不支持
-	sb  t1, 0x4(t0)	        // 设置寄存器sfc_param
+	li  t0, 0xbfe80000
+	li  t1, 0x17	// div 4, fast_read + burst_en + memory_en double I/O 模式 部分SPI flash可能不支持
+	sb  t1, 0x4(t0)	// sfc_param
 	li  t1, 0x05
-	sb  t1, 0x6(t0)         // 设置寄存器sfc_timing
+	sb  t1, 0x6(t0)
 
 	/* 设置sdram cs1复用关系，开发板使用ejtag_sel gpio_0引脚(第五复用)作为第二片sdram的片选
 	  注意sw2拨码开关的设置，使用ejtag烧录pmon时需要调整拨码开关，烧录完再调整回来 */
+#ifdef SDRAM_USE_CS1
 	li		a0, 0xbfd011c0
 	lw		a1, 0x40(a0)
 	ori	a1, 0x01
 	sw		a1, 0x40(a0)
+#endif
 
 #if defined(NAND_BOOT_EN) && defined(LS1CSOC)
 #include "nand_boot.S"
@@ -161,8 +190,7 @@ real_bin:
 //	bal	uncached		/* Switch to uncached address space */
 //	nop
 
-    // 这里是异常向量的入口，不宜放太多代码，所以这里使用“bal	locate”跳到后面继续执行
-	bal	locate			/* Get current execute address，cpu会自动将前地址(大概在0xBFC00000附近)保存到ra */
+	bal	locate			/* Get current execute address */
 	nop
 /*
 uncached:
@@ -266,57 +294,162 @@ exc_common:
 	b 1b
 	nop
 
+	.align 9
+	nop
+	.align 8
+	.word read
+	.word write
+	.word open
+	.word close
+	.word nullfunction
+//	.word printf
+//	.word vsprintf
+	.word nullfunction
+	.word nullfunction
+	.word getenv
+	.word nullfunction
+	.word nullfunction
+	.word nullfunction
+	.word nullfunction
 
 /****************************************LOCATE*********************************/
 
 /*
  *  We get here from executing a bal to get the PC value of the current execute
  *  location into ra. Check to see if we run from ROM or if this is ramloaded.
- *  寄存器ra内保持着函数的返回地址，根据ra的值来判断当前是从ROM冷启动，还是从RAM热复位的
- *  ROM冷启动由通电引起，RAM热复位为各种异常引起，比如看门狗引起的复位等，
- *  也就是RAM热复位之前CPU已经开始运行了
- *  如果是从ROM冷启动，则寄存器ra的值为指令"bal	locate"所在位置加8字节，大概在0xBFC00000附近
- *  如果是从RAM热复位，则集成器ra的值为0x80xxxxxx
  */
 locate:
 //	la		s0, uncached
 //	subu	s0, ra, s0
-    /*
-     * start.s的这段汇编程序在ROM（入口点为0xBFC00000）中运行
-     * 而编译链接时指定的起始地址是0x80100000，所以需要修正一下地址
-     * s0中保存着ra与start的差值，在后续的代码中可以起到修正地址的作用
-     * 在看看文件开始的时候，对寄存器s0用途的描述是“         link versus load offset, used to relocate absolute adresses”
-     * 除了修正地址外，还通过s0的值来判断是从ROM冷启动，还是从RAM热启动
-     */
-	la		s0, start           // s0 = start， 其中start的地址为编译链接时，指定的0x80010000
-	subu	s0, ra, s0          // s0 = ra - s0，其中ra的值在ROM入口地址0xBFC00000附近
-	and	s0, 0xffff0000          // s0 = s0 & 0xffff0000
+	la		s0, start
+	subu	s0, ra, s0
+	and	s0, 0xffff0000
 
-    /*
-     * 初始化cp0的status寄存器和cause寄存器
-     * 在异常引起的(从RAM)热复位后，需要重新初始化cp0的status和cause，
-     * 如果是从ROM冷启动的，那么前面已经初始化了，这里是再次重复初始化，没有影响的
-     */
 	li		t0, SR_BOOT_EXC_VEC
-	mtc0	t0, COP_0_STATUS_REG        // 重新初始化cp0的status寄存器
-	mtc0	zero, COP_0_CAUSE_REG       // 重新清零cp0的cause寄存器
+	mtc0	t0, COP_0_STATUS_REG
+	mtc0	zero, COP_0_CAUSE_REG
 	.set	noreorder
-    
-	li	t0, 0xbfe78030          // 地址0xbfe78030为PLL/SDRAM频率配置寄存器的地址
+
+#if defined(LS1ASOC)/* to adjust the DDR frequency */
+	li v0, 0xbfc00000+(NVRAM_POS+PLL_OFFS)
+//	li v0, 0xbfc80000+(NVRAM_POS+PLL_OFFS)	/* 注意：1A LPC Flash启动地址映射为0xbfc80000 */
+	lw a1, (v0)
+
+	li v0, 0xffff0000
+	and v0, a1
+	bnez v0, 1f
+	nop
+
+	li  v0, 0x8888
+	or  a1, a1, v0
+
+	b 2f
+	nop
+1:
+#define DDRCFG_DATA (0x8888|(CPU_MULT-4)|((DDR_MULT-3)<<8))
+	li  a1, DDRCFG_DATA
+2:
+	li  a2, 0xa
+3:
+	li  a0, 0xbfe78030
+	sw  a1, 0x0(a0)
+	nop
+	sub  a2, 0x1
+	bnez a2, 3b
+	nop
+//	lw	a2, 0x0(a0)
+//	xor a2,a1
+//	andi a2,0xf0f
+//	bnez a2,2b
+//	nop
+#elif defined(LS1BSOC)
+	li a0, 0xbfe78030
+	/* 31:dc_div_en,30-26:dc_div,25:cpu_div_en,24-20:cpu_div,19:ddr_div_en,18-14:ddr_div */
+	li v0, 0xbfc00000+(NVRAM_POS+PLL_OFFS)
+	lw v1, 4(v0)
+	lw a1, (v0)
+
+	li v0, 0xfffc0000
+	and v0, a1
+	bnez v0, 1f
+	nop
+
+	andi v0, v1, 0x3f
+	bnez v0, 1f
+	nop
+
+	li v0, (1<<31)|(1<<25)|(1<<19)
+	and a2, v0, v1
+	bne a2, v0, 1f
+	nop
+
+	beqz v1, 1f
+	nop
+	nop
+	b 2f
+	nop
+1:
+#ifdef CONFIG_VGA_MODEM
+	/* ddr的分频在运行时切换会有出问题,需要重新锁定ddr的pll,
+	   在使用vga显示时为了得到合适的刷新率，ddr的分频可能会被改变，所以这里设置成与改变的值一致，
+	   避免出现问题 */
+	li v1, (1<<31)|(4<<26)|(1<<25)|(2<<20)|(1<<19)|(3<<14)|0x2a00
+	li a1, 0x14
+#else
+    li v1, (1<<31)|(4<<26)|(1<<25)|(3<<20)|(1<<19)|(4<<14)|0x2a00
+    li a1, CPU_MULT
+#endif
+2:
+	or v1, 0x2a00
+	sw v1, 4(a0)
+	sw a1, (a0);
+
+#elif defined(LS1CSOC) && !defined(NAND_BOOT_EN)
+	/* config pll div for cpu and sdram */
+	#define SDRAM_DIV_2	0x0
+	#define SDRAM_DIV_3	0x2
+	#define SDRAM_DIV_4	0x1
+	#define SDRAM_PARAM_DIV_NUM		((1 << (SDRAM_DIV+1)) % 5)
+
+	li	t0, 0xbfe78030
+	
+	li	v0, 0xbfc00000+(NVRAM_POS+PLL_OFFS)
+	lw	t2, 0(v0)
+	lw	t3, 4(v0)
+
+	li v0, 0x00000000
+	beq t2, v0, 1f
+	nop
+	li v0, 0xffffffff
+	beq t2, v0, 1f
+	nop
+
+	li v0, 0x00000000
+	beq t3, v0, 1f
+	nop
+	li v0, 0xffffffff
+	beq t3, v0, 1f
+	nop
+	nop
+	b 2f
+	nop
+1:
 	/* 设置PLL倍频 及SDRAM分频 */
 	li	t2, (0x80000008 | (PLL_MULT << 8) | (0x3 << 2) | SDRAM_DIV)
 	/* 设置CPU分频 */
 	li	t3, (0x00008003 | (CPU_DIV << 8))
+2:
 	/* 注意：首先需要把分频使能位清零 */
 	li	t1, 0x2
-	sw	t1, 0x4(t0)         // 清零CPU_DIV_VALID，即disable
-	sw	t2, 0x0(t0)         // 写寄存器START_FREQ
-	sw	t3, 0x4(t0)         // 写寄存器CLK_DIV_PARAM
+	sw	t1, 0x4(t0)
+	sw	t2, 0x0(t0)
+	sw	t3, 0x4(t0)
 	DELAY(2000)
+#endif //#ifdef LS1ASOC
 
 	/* initialize UART */
 	li a0, 0
-	bal	initserial          // 初始化串口
+	bal	initserial
 	nop
 	PRINTSTR("\r\n\r\n--------------luojiOs start--------------\r\nasm uart2 init ok!\r\n");  // 打印一条提示信息，表示串口初始化成功了
 
@@ -357,6 +490,22 @@ locate:
 	sw a1, 0x1a0(a0)*/
 #endif
 
+#if defined(LS1ASOC)
+	/* 启动时默认关闭SATA GPU USB GMAC0 GMAC1 */
+	li a0,0xbfd00000
+	lw a2,0x420(a0);
+	xor a2,0x00500000	//关闭SATA GPU
+	xor a2,0x01a00000	//关闭USB GMAC0 GMAC1
+	sw a2,0x420(a0);
+#elif defined(LS1BSOC)
+	/* 启动时默认关闭USB GMAC0 GMAC1 */
+	li a0,0xbfd00000
+	lw a2,0x424(a0);
+//	ori a2,0x3800
+	ori a2,0x0800
+	sw a2,0x424(a0);
+#endif
+
 	li output_en, 0x1
 #ifdef FAST_STARTUP
 	li a1, 0x03000000
@@ -373,15 +522,10 @@ get_pin_val_finish:
 #endif
 
 	/* Initializing. Standby... */
-    /*
-     *  根据s0的值判断是否为ROM冷启动
-     *  如果s0不等于0，则是ROM冷启动；如果等于0，则是RAM热复位
-     *  冷启动，则需要初始化内存，cache，加载代码到内存等
-     */
-	bnez s0, 1f     // 如果寄存器s0不等于0，则说明是ROM冷启动，则跳转到下一个标号1处进行彻底初始化
+	bnez s0, 1f
 	nop
 	li a0, 128
-	jal main    // 热复位，则直接跳转到函数main
+	jal main
 	nop
 1:
 
@@ -415,7 +559,36 @@ cpu_win_fixup:
 	// mmap[1:0] -> destination
 	//
 	// NOTE: the address windows has priority, win0 > win1 > ... > win7
-
+#if defined(LS1ASOC)
+//	set_cpu_window(0, 0x1fc00000, 0xfff00000, 0x1fc000f3) // boot rom
+	set_cpu_window(0, 0x10000000, 0xf8000000, 0x100000d1) // PCI mem0, mem1
+	set_cpu_window(1, 0x18000000, 0xfc000000, 0x180000d1) // PCI mem2
+	set_cpu_window(2, 0x1c000000, 0xffe00000, 0x1c0000d1) // PCI cfg/IO/header
+	set_cpu_window(3, 0x1c200000, 0xffe00000, 0x1c2000d2) // gpu 1c2 /dc 1c3
+	set_cpu_window(4, 0x1f000000, 0xff000000, 0x1f0000d3) // AXIMUX
+//	set_cpu_window(5, 0x40000000, 0xc0000000, 0x000000f0) // DDR 1GB
+	set_cpu_window(5, 0x00000000, 0x00000000, 0x000000f0) // everything else
+	set_cpu_window(6, 0x00000000, 0x00000000, 0x000000f0) // everything else
+	set_cpu_window(7, 0x00000000, 0x00000000, 0x000000f0) // everything else
+#elif defined(LS1BSOC)
+	set_cpu_window(0, 0x1c300000, 0xfff00000, 0x1c3000d2) // dc       1M must cachable
+	set_cpu_window(1, 0x1fe10000, 0xffffe000, 0x1fe100d3) // gmac0	8K
+	set_cpu_window(2, 0x1fe20000, 0xffffe000, 0x1fe200d3) // gmac1	8K
+	set_cpu_window(3, 0x1fe10000, 0xffff0000, 0x1fe100d0) // gmac0	64K
+	set_cpu_window(4, 0x1fe20000, 0xffff0000, 0x1fe200d0) // gmac1	64K
+	set_cpu_window(5, 0x1ff00000, 0xfff00000, 0x1ff000d0) // reserved 1M
+	set_cpu_window(6, 0x1f000000, 0xff000000, 0x1f0000d3) // AXIMUX   16M
+	set_cpu_window(7, 0x00000000, 0x00000000, 0x000000f0) // ddr 0
+	li	t0, 0xbfd000e0
+	lw	t1, 0x0(t0)	//0xbfd000e0
+	and t1, t1, 0xffffff00
+	ori	t1, 0xd0
+	sw	t1, 0x0(t0)
+	lw	t1, 0x8(t0)	//0xbfd000e8
+	and t1, t1, 0xffffff00
+	ori	t1, 0xd0
+	sw	t1, 0x8(t0)
+#elif defined(LS1CSOC)
 /*	set_cpu_window(0, 0x1c280000, 0xfff80000, 0x1c280083) // camera 512K
 	set_cpu_window(1, 0x1c300000, 0xfff00000, 0x1c300081) // dc 1M
 	set_cpu_window(2, 0x1fe10000, 0xffffe000, 0x1fe10082) // gmac0	8K
@@ -433,41 +606,81 @@ cpu_win_fixup:
 	set_cpu_window(5, 0x00000000, 0x00000000, 0x000000f0)
 	set_cpu_window(6, 0x00000000, 0x00000000, 0x000000f0) // ddr 0
 	set_cpu_window(7, 0x00000000, 0x00000000, 0x000000f0) // ddr 0*/
-
+#endif
 	// after this fixup, the kernel code should be compiled with
 	// uncached instruction fetch patch
 
 	/* 配置内存 */
-	li msize, MEM_SIZE    
+#if defined(LS1ASOC) || defined(LS1BSOC)
+	/*
+	 * set *_ssel and *_tsel
+	 * *_ssel参数用于配置DDR IO的驱动强度 01: 弱驱动 11: 强驱动
+	 * *_tsel参数用于配置DDR IO的ODT输入匹配阻抗 00: disable 01: 75ohm 10: 150ohm 11: 50ohm
+	 * pad_st不用于SSTL18模式，应保持为0
+	 */
+	li	t0, 0xbfd010c8
+	li	t1, 0xfc000000
+#ifdef LS1ASOC
+	li	t1, 0x00000000
+#endif
+	sw	t1, (t0)
+	li	t0, 0xbfd010f8
+	li	t1, 0x14000000
+	sw	t1, (t0)
+
+	/* DDR2 config begin */
+	bal     ddr2_config
+	nop
+
+	/* memory size defined in conf */
+	li msize, MEM_SIZE
+
+#ifdef CONFIG_DDR16BIT
+	/*16bit ddr and disable conf*/ 
+	#ifdef LS1ASOC
+		li a1, 0x3
+	#elif LS1BSOC
+		li a1, 0x110000
+	#endif
+#else
+	/*disable conf*/
+	#ifdef LS1ASOC
+		li a1, 0x2
+	#elif LS1BSOC
+		li a1, 0x100000
+	#endif
+#endif //#ifdef CONFIG_DDR16BIT
+
+#ifdef LS1ASOC
+	li a0, 0xbfd00420
+#elif LS1BSOC
+	li a0, 0xbfd00424
+#endif
+	lw a2, 0x0(a0)
+	or a2, a1
+	sw a2, 0x0(a0)
+
+#elif defined(LS1CSOC)
+	li msize, MEM_SIZE
 #if !defined(NAND_BOOT_EN)
+//#include "sdram_cfg.S"
 
-    /* 
-       手册建议，先写寄存器SD_CONFIG[31:0]，然后再写寄存器的SD_CONFIG[63:32]，
-       即先写低32位，再写高32位。
-       写三次寄存器，最后一次将最高位置一，即使能
-    */
-
-    // 写第一次
-	li  	t1, 0xbfd00410      // 寄存器SD_CONFIG[31:0]的地址为0xbfd00410
-	li		a1, SD_PARA0        // 宏SD_PARA0在sdram_cfg.S中定义的
-	sw		a1, 0x0(t1)         // 将宏SD_PARA0的值写入寄存器SD_CONFIG[31:0]
-	li		a1, SD_PARA1
-	sw		a1, 0x4(t1)         // 同理，将宏SD_PARA1的值写入寄存器SD_CONFIG[63:32]
-
-	// 写第二次
+	li  	t1, 0xbfd00410
 	li		a1, SD_PARA0
 	sw		a1, 0x0(t1)
 	li		a1, SD_PARA1
 	sw		a1, 0x4(t1)
-
-    // 写第三次	
 	li		a1, SD_PARA0
 	sw		a1, 0x0(t1)
-	li		a1, SD_PARA1_EN     // 使能
+	li		a1, SD_PARA1
+	sw		a1, 0x4(t1)
+	li		a1, SD_PARA0
+	sw		a1, 0x0(t1)
+	li		a1, SD_PARA1_EN
 	sw		a1, 0x4(t1)
 //	DELAY(100)
 #endif
-
+#endif
 /**************************************CACHE*****************************/
 
 #define CF_7_SE         (1 << 3)        /* Secondary cache enable */
@@ -483,95 +696,135 @@ do_caches:
 	li	s7, 0                   /* no L2 cache */
 	li	s8, 0                   /* no L3 cache */
 
-    bal     cache_init          // 调用汇编函数cache_init
+    bal     cache_init
     nop
 
-	mfc0   a0, COP_0_CONFIG         // 将协处理器0的config寄存器的值加载到寄存器a0
-	and    a0, a0, ~((1<<12) | 7)   // a0 = a0 & ~((1<<12) | 7)
-	or     a0, a0, 2                // a0 |= 2
-	mtc0   a0, COP_0_CONFIG         // 将寄存器a0的值写入协处理器0的config寄存器
+	mfc0   a0, COP_0_CONFIG
+	and    a0, a0, ~((1<<12) | 7)
+	or     a0, a0, 2
+	mtc0   a0, COP_0_CONFIG
 
 
 
+#ifdef LS1ASOC
+acpi_begin:
+
+/* Access ACPI controller to check out if the machine is resuming from suspend 
+   	   Zeng Lu <zenglu@loongson.cn> */
+	li	t0,	0xbfe7c000
+	lw	t1,(t0)
+	and t1,t1,	(1<<15)//WAK_STS
+	beqz t1,acpi_end
+	nop
+	/*clear wakeup events */
+	li	t0, 0xbfe7c000
+	li	t1, -1
+	sw	t1, (t0)
+	li	t0, 0xbfe7c020
+	li	t1, -1
+	sw	t1, (t0)
+
+	li	t0,	0xbfe7c008
+	lw	t1,	(t0)
+#if 0 //clear slp_type if needed,this bit will be cleared in os
+	li	t2, 0
+	sw	t2, (t0)
+#endif
+
+	srl	t1,	10
+	and	t1,	t1,	7//SLP_TYP
+	sub	t1,	t1,	5	
+	bnez	t1,	acpi_end	/* Resuming from suspend */
+	nop
+
+	li	t0,	0xa01ffc00
+	li	t1,	0xa01ffc48
+1:
+	addiu t0,t0,4
+	bne t0,t1,1b
+	nop
+
+	mfc0   a0,COP_0_CONFIG
+	and    a0,a0,~((1<<12) | 3)
+	or     a0,a0,2
+	mtc0   a0,COP_0_CONFIG
+
+	bal	CPU_TLBClear
+	nop
+	bal	suspend_resume
+	nop
+	/* Resume will never get here */
+1:
+	b	1b
+	nop
+acpi_end:/* Startup as usual */
+#endif
 
 /***********************MEMORY DEBUGGING AND COPY SELF TO RAM***********************/
 //#include "newtest.32/mydebug.S"
 bootnow:
 	/* copy program to sdram to make copy fast */
-    /* 先将执行拷贝pmon到内存任务的代码，拷贝到内存0xa0000000 */
-    
-    /* 先确定需要拷贝的代码段为标号121到标号122之间的代码
-     * 由于链接时指定的起始地址是0x80010000，
-     * 而目前正在ROM（SPI NOR FLASH，起始地址为0xBFC00000）运行
-     * 所以需要用寄存器s0来修正一下地址
-     */
-	la		t0, 121f            // 将下一个标号121所在地址，加载到寄存器t0
-	addu	t0, s0              // 使用寄存器s0修正t0中的(标号121的)地址
-	la		t1, 122f            // 将下一个标号122所在地址，加载到寄存器t1
-	addu	t1, s0              // 使用寄存器s0修正t1中的(标号122的)地址
+	la		t0, 121f
+	addu	t0, s0
+	la		t1, 122f
+	addu	t1, s0
 	
-	li		t2, 0xa0000000      // 将立即数0xa0000000（起始地址）加载到寄存器t2
+	li		t2, 0xa0000000
 1:
-	lw		v0, (t0)            // 将寄存器t0所指的内存地址开始4字节的数据加载到寄存器v0
-	sw		v0, (t2)            // 将寄存器v0的内容保存到寄存器t2所指的内存中
-	addu	t0, 4               // 寄存器t0向后移4字节
-	addu	t2, 4               // 寄存器t2向后移4字节
-	ble	t0, t1, 1b              // 如果t0 <= t1，则跳转到上一个标号1处，继续拷贝后面的4字节
+	lw		v0, (t0)
+	sw		v0, (t2)
+	addu	t0, 4
+	addu	t2, 4
+	ble	t0, t1, 1b
 	nop
 
-	li		t0, 0xa0000000      // 将立即数0xa0000000加载到寄存器t0
-	jr		t0	                // 跳转到起始地址0xa0000000处开始执行（拷贝任务）
+	li		t0, 0xa0000000
+	jr		t0	
 	nop		
 
 121: 
 	/* Copy PMON to execute location... */
-    /* 将固件拷贝到起始地址为0xa0010000的内存空间
-       由于kseg0(0x8000 0000 - 0x9FFF FFFF)和kseg1(0xA000 0000 - 0xBFFF FFFF)是映射到物理内存的相同区域
-       即拷贝到0xA000 0000开始的kseg1，就相当于拷贝到0x8000 0000开始的kseg0
-       这就是为什么链接时，指定的地址是0x8001 0000，而拷贝的目标起始地址是0xA001 0000
-    */
-	la		a0, start           // 加载符号start所在地址0x80010000加载到寄存器a0中
-	addu	a1, a0, s0          // 使用寄存器s0修正寄存器a0中的地址，a1=0xBFC00000
-	la		a2, _edata          // 加载_edata（链接脚本中的一个符号）到寄存器a2
-	or		a0, 0xa0000000      // a0 = a0 | 0xa0000000 = 0xa0010000
-	or		a2, 0xa0000000      // a2 = a2 | 0xa0000000，修正地址_edata
-	subu	t1, a2, a0          // t1 = a2 - a0，即计算从start到_edata之间的长度（字节数）
-	srl	t1, t1, 2               // t1 >>= 2，即t1除以4。(和前面类似，每次拷贝4字节，所以除以4)
-	                            // 似乎t1计算结果没有被使用，马上就被后面的覆盖了
+	la		a0, start
+	addu	a1, a0, s0
+	la		a2, _edata
+	or		a0, 0xa0000000
+	or		a2, 0xa0000000
+	subu	t1, a2, a0
+	srl	t1, t1, 2
 
-	move	t0, a0              // t0 = a0 = 0xa0010000 (目标起始地址)
-	move	t1, a1              // t1 = a1 = 0xBFC00000 (start在ROM中的地址，源起始地址)
-	move	t2, a2              // t2 = a2 (_edata在ROM中的地址，源结束地址)
+	move	t0, a0
+	move	t1, a1
+	move	t2, a2
 
 	/* copy text section */
-1:	and	t3, t0, 0x0000ffff      // t3 = t0 & 0x0000ffff，取低16位
-	bnez	t3, 2f              // 如果t3不等于0，则跳转到下一个标号2处继续执行，t3的计算结果似乎没被使用，就被后面的覆盖了
+1:	and	t3, t0, 0x0000ffff
+	bnez	t3, 2f
 	nop
-2:	lw		t3, 0(t1)           // 从源地址t1处加载4字节到寄存器t3中
+2:	lw		t3, 0(t1)
 	nop
-	sw		t3, 0(t0)           // 将寄存器t3中的4字节数据保存到目标地址t0处
-	addu	t0, 4               // 目标地址t0后移4字节
-	addu	t1, 4               // 源地址t1    后移4字节
-	bne	t2, t0, 1b              // 如果t2不等于t0，则跳到上一个标号1处继续拷贝，总的来说就是判断拷贝是否结束
+	sw		t3, 0(t0)
+	addu	t0, 4
+	addu	t1, 4
+	bne	t2, t0, 1b
 	nop
 	/* copy text section done. */
 	
 	/* Clear BSS */
-    /* BSS段为未初始化的全局变量的内存区间，这部分不需要从ROM中拷贝，也就不需要做地址修正 */
-	la		a0, _edata          // 加载_edata的地址到寄存器a0
-	la		a2, _end            // 加载_end的地址到寄存器a2
-2:	sw		zero, 0(a0)         // 将寄存器a0所指的4字节清零
-	bne	a2, a0, 2b              // 如果a2不等于a0，则跳到上一个标号2处，继续清零下一个4字节
-	addu	a0, 4               // a0 += 4，注意，这条汇编在延迟槽内，所以仍然会被执行到
+	la		a0, _edata
+	la		a2, _end
+2:	sw		zero, 0(a0)
+	bne	a2, a0, 2b
+	addu	a0, 4
 	/* Copy PMON to execute location done */
 
-    /* 将内存大小（单位M）作为入参，放在寄存器a0中 */
-	move	a0, msize           // a0 = msize（内存大小）
-	srl	a0, 20                  // a0 >>= 20，将单位转换为M
+	li		a0, 0
+	sw		a0, CpuTertiaryCacheSize /* Set L3 cache size */
 
-    /* 调用函数main */
-	la		v0, main            // 将main（）函数地址加载到寄存器v0中
-	jalr	v0                  // 调用寄存器v0所指的函数
+	move	a0, msize
+	srl	a0, 20
+
+	la		v0, main
+	jalr	v0
 	nop
 
 122:
@@ -580,6 +833,104 @@ stuck:
 	b	stuck
 	nop
 
+/*
+ *  Clear the TLB. Normally called from start.S.
+ */
+#if __mips64
+#define MTC0 dmtc0
+#else 
+#define MTC0 mtc0
+#endif
+
+#define	PG_SIZE_4K	0x00000000
+#define	PG_SIZE_16K	0x00006000
+#define	PG_SIZE_64K	0x0001e000
+#define	PG_SIZE_256K	0x0007e000
+#define	PG_SIZE_1M	0x001fe000
+#define	PG_SIZE_4M	0x007fe000
+#define	PG_SIZE_16M	0x01ffe000
+
+
+
+LEAF(CPU_TLBClear)
+	li	a3, 0			# First TLB index.
+
+	li	a2, PG_SIZE_4K
+	MTC0   a2, COP_0_TLB_PG_MASK   # Whatever...
+
+1:
+	MTC0   zero, COP_0_TLB_HI	# Clear entry high.
+	MTC0   zero, COP_0_TLB_LO0	# Clear entry low0.
+	MTC0   zero, COP_0_TLB_LO1	# Clear entry low1.
+
+	mtc0    a3, COP_0_TLB_INDEX	# Set the index.
+	addiu	a3, 1
+	li	a2, 64
+	nop
+	nop
+	tlbwi				# Write the TLB
+
+	bne	a3, a2, 1b
+	nop
+
+	jr	ra
+	nop
+END(CPU_TLBClear)
+
+/*
+ *  Set up the TLB. Normally called from start.S.
+ */
+#define	PG_SVPN		0xfffff000	/* Software page no mask */
+#define	PG_HVPN		0xffffe000	/* Hardware page no mask */
+#define	PG_ODDPG	0x00001000	/* Odd even pte entry */
+#define	PG_ASID		0x000000ff	/* Address space ID */
+#define	PG_G		0x00000001	/* HW */
+#define	PG_V		0x00000002
+#define	PG_NV		0x00000000
+#define	PG_M		0x00000004
+#define	PG_ATTR		0x0000003f
+#define	PG_UNCACHED	0x00000010
+#define	PG_CACHED	0x00000018
+#define	PG_CACHEMODE	0x00000038
+#define	PG_ROPAGE	(PG_V | PG_RO | PG_CACHED) /* Write protected */
+#define	PG_RWPAGE	(PG_V | PG_M | PG_CACHED)  /* Not wr-prot not clean */
+#define	PG_CWPAGE	(PG_V | PG_CACHED)	   /* Not wr-prot but clean */
+#define	PG_IOPAGE	(PG_G | PG_V | PG_M | PG_UNCACHED)
+#define	PG_FRAME	0x3fffffc0
+#define PG_SHIFT	6
+
+	
+LEAF(CPU_TLBInit)
+	li	a3, 0			# First TLB index.
+
+	li	a2, PG_SIZE_16M
+	MTC0   a2, COP_0_TLB_PG_MASK   # All pages are 16Mb.
+
+1:
+	and	a2, a0, PG_SVPN
+	MTC0   a2, COP_0_TLB_HI	# Set up entry high.
+
+	move	a2, a0
+	srl	a2, a0, PG_SHIFT 
+	and	a2, a2, PG_FRAME
+	ori	a2, PG_IOPAGE
+	MTC0   a2, COP_0_TLB_LO0	# Set up entry low0.
+	addu	a2, (0x01000000 >> PG_SHIFT)
+	MTC0   a2, COP_0_TLB_LO1	# Set up entry low1.
+
+	mtc0    a3, COP_0_TLB_INDEX	# Set the index.
+	addiu	a3, 1
+	li	a2, 0x02000000
+	subu	a1, a2
+	nop
+	tlbwi				# Write the TLB
+
+	bgtz	a1, 1b
+	addu	a0, a2			# Step address 32Mb.
+
+	jr	ra
+	nop
+END(CPU_TLBInit)
 
 /*
  * Resume the CPU state, jump to the kernel
@@ -649,22 +1000,22 @@ LEAF(suspend_save)
 END(suspend_save)
 
 /***********************************FUNCTIONS**********************************/
-// 打印字符串
+
 LEAF(stringserial)
 	nop
-	move	a2, ra          // 将函数返回地址保存到寄存器a2中
-	addu	a1, a0, s0      // 修正地址
-	lbu	a0, 0(a1)           // 读取第一个字节到寄存器a0中
+	move	a2, ra
+	addu	a1, a0, s0
+	lbu	a0, 0(a1)
 1:
-	beqz	a0, 2f          // if (a0 == 0) 则跳转到下一个标号2处，（说明是空字符串，无需打印）直接返回
+	beqz	a0, 2f
 	nop
-	bal	tgt_putchar         // 打印一个字符
-	addiu	a1, 1           // a1 += 1，移动到下一个字节
-	b	1b                  // 跳转到上一个标号1处（继续打印下一个字符），注意延迟槽中的指令也会执行
-	lbu	a0, 0(a1)           // a0 = *a1，加载下一个字符到寄存器a0中，此语句位于延迟槽内
+	bal	tgt_putchar
+	addiu	a1, 1
+	b	1b
+	lbu	a0, 0(a1)
 
 2:
-	j	a2                  // 返回
+	j	a2
 	nop
 END(stringserial)
 
@@ -707,10 +1058,24 @@ LEAF(hexserial)
 	nop
 END(hexserial)
 
+
+#define NSREG(x)	(x)
+#define	NS16550_DATA	0
+#define	NS16550_IER	1
+#define	NS16550_IIR	2
+#define	NS16550_FIFO	2
+#define	NS16550_CFCR	3
+#define	NS16550_MCR	4
+#define	NS16550_LSR	5
+#define	NS16550_MSR	6	
+#define	NS16550_SCR	7
+
 LEAF(tgt_putchar)
 	move	AT, ra
+	beqz	output_en, 2f
+	nop
 	
-	la	v0, UART_BASE_ADDR          // 加载串口基地址到寄存器v0中
+	la	v0, COM1_BASE_ADDR
 #ifdef	HAVE_MUT_COM
 	bal	1f
 	nop
@@ -723,22 +1088,84 @@ LEAF(tgt_putchar)
 	nop
 #endif
 1:
-	lbu	v1, LS1C_UART_LSR_OFFSET(v0)    // 将线路状态寄存器（LSR）的值加载到寄存器v1中
-	and	v1, LSR_TXRDY                   // v1 &= LSR_TXRDY，取出位TFE的值，用于判断是否可以发送了
-	beqz	v1, 1b                      // if (v1 == 0)，说明传输FIFO不为空，还不可以发送，则跳转到上一个标号1处，继续等待
+	lbu	v1, NSREG(NS16550_LSR)(v0)
+	and	v1, LSR_TXRDY
+	beqz	v1, 1b
 	nop
 
-	sb	a0, LS1C_UART_DAT_OFFSET(v0)    // 将寄存器a0的值写入数据寄存器（DAT）中，即发送
+	sb	a0, NSREG(NS16550_DATA)(v0)
 2:
-	j	ra                              // 返回
+	j	ra
 	nop
 END(tgt_putchar)
 
+LEAF(tgt_testchar)
+	la	v0, COM1_BASE_ADDR
+1:
+	lbu	v1, NSREG(NS16550_LSR)(v0)
+	and	v0,v1, LSR_RXRDY
+	jr ra
+	nop
+END(tgt_testchar)
+
+LEAF(tgt_getchar)
+	move	AT, ra
+
+	beqz	output_en, 2f
+	nop
+	
+	la	v0, COM1_BASE_ADDR
+#ifdef	HAVE_MUT_COM
+	bal	1f
+	nop
+	
+	la	v0, COM3_BASE_ADDR
+	bal	1f
+	nop
+	
+	jr	AT
+	nop
+#endif
+1:
+	lbu	v1, NSREG(NS16550_LSR)(v0)
+	and	v1, LSR_RXRDY
+	beqz	v1, 1b
+	nop
+	lb	v0, NSREG(NS16550_DATA)(v0)
+2:
+	jr ra
+	nop
+END(tgt_getchar)
+
+
+/* baud rate definitions, matching include/termio.h */
+#define B0      0
+#define B50     50      
+#define B75     75
+#define B110    110
+#define B134    134
+#define B150    150
+#define B200    200
+#define B300    300
+#define B600    600
+#define B1200   1200
+#define B1800   1800
+#define B2400   2400
+#define B4800   4800
+#define B9600   9600
+#define B19200  19200
+#define B38400  38400
+#define B57600  57600
+#define B115200 115200
+#define B230400 230400
+#define B380400 380400
+#define B460800 460800
+#define B921600 921600
 
 LEAF(initserial)
-	move AT,ra                      // 把返回地址暂时保存在寄存器AT中
+	move AT,ra
 	
-	la	v0, UART_BASE_ADDR          // 加载串口基地址到寄存器v0中
+	la	v0, COM1_BASE_ADDR
 #ifdef	HAVE_MUT_COM
 	bal	1f
 	nop
@@ -752,11 +1179,61 @@ LEAF(initserial)
 	nop
 #endif
 1:
-	li	v1, FIFO_ENABLE|FIFO_RCV_RST|FIFO_XMT_RST|FIFO_TRIGGER_4    // 清空Rx,Tx的FIFO，申请中断的trigger为4字节
-	sb	v1, LS1C_UART_FCR_OFFSET(v0)        // 写FIFO控制寄存器（FCR）
-	li	v1, CFCR_DLAB                       // 访问操作分频锁存器
-	sb	v1, LS1C_UART_LCR_OFFSET(v0)        // 写线路控制寄存器（LCR）
-
+	li	v1, FIFO_ENABLE|FIFO_RCV_RST|FIFO_XMT_RST|FIFO_TRIGGER_4
+	sb	v1, NSREG(NS16550_FIFO)(v0)
+	li	v1, CFCR_DLAB
+	sb	v1, NSREG(NS16550_CFCR)(v0)
+#if defined(LS1ASOC)
+//	li	v1, ((APB_CLK*DDR_MULT)/(2*16*CONS_BAUD))     // 8MHz crystal,   M[7:3]=6     1fboard
+//	li	a0, 0xbfe78030
+//	lw	a0, (a0)
+	move	a0, a1
+	and		a0, 0x700
+	srl		a0, 8
+	addiu	a0, 3
+	li		v1, APB_CLK
+	multu	a0, v1
+	mflo	v1
+	li		a0, 2*16*CONS_BAUD
+	divu	v1, a0
+	mflo	v1
+#elif defined(LS1BSOC)
+	move	v1, a0
+	bnez	v1, 2f
+	nop
+	li		v1, APB_CLK
+	li		a0, 0xbfe78030
+	lw		a1, 4(a0)
+	li		a2, 0xc00
+	and		a1, a2
+	beq		a1, a2,2f
+	nop
+	lw		a1, (a0)
+	andi	a2, a1, 0x3f
+	addiu	a2, 12
+	sll		a2, 10
+	srl		a1, 8
+	andi	a1, 0x3ff
+	addu	a1, a2
+	li		a2, (APB_CLK>>11)
+	multu	a1, a2
+	mflo	v1
+	lw		a1, 4(a0)
+	srl		a1, 14
+	andi	a2, a1, 0x20
+	beqz	a2, 1f
+	nop
+	andi	a1, 0x1f
+	divu	v1, a1
+	mflo	v1
+	b 2f
+	nop
+1:
+	srl		v1, 1	
+2:
+	li		a1, 2*16*CONS_BAUD
+	divu	v1, v1, a1
+#elif defined(LS1CSOC)
 	/* uart3 config mux 默认第一复用 */
 #if (UART_BASE_ADDR == 0xbfe4c000)
 	li		a0, 0xbfd011c4
@@ -778,11 +1255,11 @@ LEAF(initserial)
 	ori		a1, 0x03
 	sw		a1, 0x00(a0)*/
 #elif (UART_BASE_ADDR == 0xbfe48000)
-	/* UART2 使用gpio36，gpio37的第二复用*/
-	li		a0, LS1C_CBUS_FIRST1        // 加载复用寄存器CBUS_FIRST1的地址到寄存器a0
-	lw		a1, 0x10(a0)                // 加载复用寄存器CBUS_SECOND1的值到寄存器a1
-	ori		a1, 0x30                    // a1 |= 0x30，即GPIO36，GPIO37配置为第二复用
-	sw		a1, 0x10(a0)                // 将寄存器a1的值写入寄存器CBUS_SECOND1中
+	/* UART2 */
+	li		a0, 0xbfd011c4
+	lw		a1, 0x10(a0)
+	ori		a1, 0x30
+	sw		a1, 0x10(a0)
 #elif (UART_BASE_ADDR == 0xbfe44000)
 	/* UART1 */
 	li		a0, 0xbfd011f0
@@ -791,51 +1268,60 @@ LEAF(initserial)
 	sw		a1, 0x00(a0)
 #endif
 
-    // 设置波特率
-    // 计算pll频率
-	li		a0, 0xbfe78030      // 0xbfe78030为PLL/SDRAM频率配置寄存器START_FREQ，将地址0xbfe78030加载到寄存器a0中
-	lw		a1, 0(a0)           // 加载寄存器START_FREQ的值到寄存器a1中
-	srl		a1, 8               // a1 >>= 8
-	andi	a1, 0xff            // a1 &= 0xff，即a1=PLL_MULT（PLL倍频系数）
-	li		a2, APB_CLK         // a2 = APB_CLK = 24Mhz（外部晶振频率）
-	srl		a2, 2			    // a2 = a2 >> 2 = APB_CLK/4
-	multu	a1, a2              // hilo = a1 * a2 = PLL_MULT * APB_CLK /4
-	mflo	v1				    // v1 = lo，将a1 * a2的结果的低32位放到v1中，即v1为pll频率
-	// 判断是否对时钟分频
-	lw		a1, 4(a0)           // 加载寄存器CLK_DIV_PARAM的值到寄存器a1中
-	andi	a2, a1, DIV_CPU_SEL // a2 = a1 & DIV_CPU_SEL，即读取位CPU_SEL的值，如果=1，则分频时钟；如果=0，则晶振输入时钟(bypass模式)
-	bnez	a2, 1f              //if (a2 != 0) 则跳转到下一个标号1处
+	li		a0, 0xbfe78030
+	lw		a1, 0(a0)
+	andi	a2, a1, 0x3
+	addiu	a2, 1			//sdram_div+1
+	li		t1, 1
+	sll		t1, a2			//1<<(sdram_div+1)
+	li		t2, 5
+	remu	t1, t2			//(1<<(sdram_div+1))%5
+	srl		a1, 8
+	andi	a1, 0xff
+	li		a2, APB_CLK
+	srl		a2, 2			//APB_CLK/4
+	multu	a1, a2
+	mflo	v1				//APB_CLK/4 * PLL_MULT
+	divu	v1, t1
+	mflo	v1				//APB_CLK/4 * PLL_MULT / (1<<(sdram_div+1))%5
+
+	lw		a1, 4(a0)
+	andi	a2, a1, DIV_CPU_SEL
+	bnez	a2, 1f
 	nop
-	li		v1, APB_CLK         // v1 = APB_CLK，即cpu时钟为晶振频率
+	li		v1, APB_CLK
 	b		3f
 	nop
-1:  // 判断cpu分频系数是否有效
-	andi	a2, a1, DIV_CPU_EN  // a2 = a1 & DIV_CPU_EN，即读取位CPU_DIV_EN的值，判断配置参数是否有效
-	bnez	a2, 2f              // if (a2 != 0) 则跳转到下一个标号2处
+1:
+	andi	a2, a1, DIV_CPU_EN
+	bnez	a2, 2f
 	nop
-	srl		v1, 1			    //v1 >>= 1，即v1 = APB_CLK/4 * PLL_MULT     / 2
+	srl		v1, 1			//APB_CLK/4 * PLL_MULT / (1<<(sdram_div+1))%5 / 2
 	b		3f
 	nop
-2:  // 计算cpu频率
-	andi	a1, DIV_CPU         // a1 &= DIV_CPU
-	srl		a1, DIV_CPU_SHIFT   // a1 >>= DIV_CPU_SHIFT，即a1为cpu分频系数
-	divu	v1, a1              // lo = v1 / a1; hi = v1 % a1
-	mflo	v1				    // v1 = lo，即v1为cpu频率
+2:
+	andi	a1, DIV_CPU
+	srl		a1, DIV_CPU_SHIFT
+	divu	v1, a1
+	mflo	v1				//APB_CLK/4 * PLL_MULT / (1<<(sdram_div+1))%5 / CPU_DIV
 3:
-//	li	v1, ((APB_CLK / 4) * (PLL_MULT / CPU_DIV)) / (16*CONS_BAUD) / 2
-	li		a1, 16*CONS_BAUD    // a1 = 16 * 波特率
-	divu	v1, v1, a1          // v1 = v1 / a1
-	srl     v1, 1               // v1 >>= 1，即v1 /= 2
-	sb	v1, LS1C_UART_LSB_OFFSET(v0)    // 将低8位写入分频锁存器1
-	srl	v1, 8                           // v1 >>= 8
-	sb	v1, LS1C_UART_MSB_OFFSET(v0)    // 将低8位写入分频锁存器2
-	
-	li	v1, CFCR_8BITS                  // 8个数据位，1个停止位，无校验
-	sb	v1, LS1C_UART_LCR_OFFSET(v0)    // 写线路控制寄存器（LCR）
-//	li	v1, MCR_DTR|MCR_RTS             // 使能DTR和RTS
-//	sb	v1, LS1C_UART_MCR_OFFSET(v0)    // 写MODEM控制寄存器（MCR）
-	li	v1, 0x0                         // 关闭所有中断
-	sb	v1, LS1C_UART_IER_OFFSET(v0)    // 写中断使能控制寄存器（IER）
+//	li	v1, ((APB_CLK / 4) * (PLL_MULT / CPU_DIV)) / SDRAM_PARAM_DIV_NUM / (16*CONS_BAUD)
+	li		a1, 16*CONS_BAUD
+	divu	v1, v1, a1
+#endif
+	sb	v1, NSREG(NS16550_DATA)(v0)
+	srl	v1, 8
+	sb	v1, NSREG(NS16550_IER)(v0)
+	li	v1, CFCR_8BITS
+	sb	v1, NSREG(NS16550_CFCR)(v0)
+	li	v1, MCR_DTR|MCR_RTS
+	sb	v1, NSREG(NS16550_MCR)(v0)
+	li	v1, 0x0
+	sb	v1, NSREG(NS16550_IER)(v0)
+        
+	#disable all interrupt
+	li  v1, 0x0
+	sb  v1, NSREG(NS16550_IER)(v0)
 	j   ra
 	nop
 END(initserial)
@@ -869,6 +1355,7 @@ hexchar:
 #define Index_Writeback_Inv_D		0x01
 
 
+/*************lxy add this *************/
 	.ent	CPU_DisableCache
 	.global CPU_DisableCache
 	.set noreorder
@@ -882,6 +1369,7 @@ CPU_DisableCache:
    	nop
 	.set reorder
 	.end 	CPU_DisableCache
+/***************lxy*******************/
 
 LEAF(nullfunction)
 	jr ra
@@ -896,10 +1384,10 @@ cache_init:
 ####part 2####
 cache_detect_4way:
 	.set	mips32
-	mfc0	t4, CP0_CONFIG,1        // 将cp0的config1寄存器的值加载到寄存器t4中
-	lui		v0, 0x7		            // v0 = 0x7 << 16
-	and		v0, t4, v0              // v0 = t4 & v0
-	srl		t3, v0, 16              // t3 = v0 >> 16  Icache组相联数 IA
+	mfc0	t4, CP0_CONFIG,1
+	lui		v0, 0x7		//v0 = 0x7 << 16
+	and		v0, t4, v0    
+	srl		t3, v0, 16    //t3 = v0 >> 16  Icache组相联数 IA
 
 	li		t5, 0x800 		//32*64
 	srl		v1, t4,22		//v1 = t4 >> 22
@@ -911,11 +1399,11 @@ cache_detect_4way:
 	andi	v0, t4, 0x0380
 	srl		t7, v0, 7		//DA
 
-	li		t6, 0x800       // 32*64
+	li		t6, 0x800 #32*64
 	srl		v1, t4,13
 	andi	v1, 7			//DS
-	sll		t6, v1          // DataCacheSetSize
-	sll		t6, t7          // t5 DataCacheSize
+	sll		t6, v1  #DataCacheSetSize
+	sll		t6, t7  #t5 DataCacheSize
 
 ####part 3####
 #	.set	mips3
@@ -928,8 +1416,8 @@ cache_init_d2way:
 //	li	t4, 0
 //5:
 /******************************/
-// a0=0x80000000, a1=icache_size, a2=dcache_size
-// a3, v0 and v1 used as local registers
+#a0=0x80000000, a1=icache_size, a2=dcache_size
+#a3, v0 and v1 used as local registers
 	mtc0	$0, CP0_TAGHI
 	addu	v0, $0, a0		//v0 = 0 + a0
 	addu	v1, a0, a2		//v1 = a0 + a2
@@ -937,7 +1425,7 @@ cache_init_d2way:
 	beq		a3, $0, 1f		//if (a3 == 0) goto 1f
 	nop
 	mtc0	$0, CP0_TAGLO
-	cache	Index_Store_Tag_D, 0x0(v0)	        // 1 way
+	cache	Index_Store_Tag_D, 0x0(v0)	# 1 way
 4:	beq		$0, $0, 1b
 	addiu	v0, v0, 0x20
 1:
@@ -947,7 +1435,7 @@ cache_flush_i2way:
 1:	slt		a3, v0, v1
 	beq		a3, $0, 1f
 	nop
-	cache	Index_Invalidate_I, 0x0(v0)	        // 1 way
+	cache	Index_Invalidate_I, 0x0(v0)	# 1 way
 4:	beq		$0, $0, 1b
 	addiu	v0, v0, 0x20
 1:
@@ -957,7 +1445,7 @@ cache_flush_d2way:
 1:	slt		a3, v0, v1
 	beq		a3, $0, 1f
 	nop
-	cache	Index_Writeback_Inv_D, 0x0(v0) 	    // 1 way
+	cache	Index_Writeback_Inv_D, 0x0(v0) 	#1 way
 4:	beq		$0, $0, 1b
 	addiu	v0, v0, 0x20
 /******************************/	//lxy
@@ -976,137 +1464,11 @@ cache_init_finish:
 	.set	reorder
 	.end	cache_init
 
-    
+#ifdef LS1ASOC
+#include "ddr2fconfig-1a-samsung-CL3.S"
+#elif LS1BSOC
+//#include "ddr2fconfig-scs-CL5.S"
+#include "ddr2fconfig-samsung-CL3.S"
+//#include "ddr2fconfig.S"
+#endif
 
-
-/*
-* General exception vector for all other CPUs.
-*
-* Be careful when changing this, it has to be at most 128 bytes
-* to fit into space reserved for the exception handler.
-* 
-* 整个异常向量的入口处理函数
-* void general_exception(void)
-*/
-
-///*
-    .set noreorder
-    .globl general_exception
-general_exception:
-    mfc0    k1, CP0_CAUSE
-    andi    k1, k1, 0x7c
-# 注意，这里exception_handlers不是函数，而是地址
-# 即exception_handlers+k1 = exception_handlers+ExcCode*4
-# exception_handlers[]中保存了各个异常处理函数的首地址，每个占4字节
-# 这里看上去很巧妙，实际上个人认为很不好理解，很容易混淆
-    PTR_L   k0, exception_handlers(k1)
-    jr  k0
-    nop
-    .set reorder
-//*/
-
-    .set noreorder
-    .globl handle_int2
-handle_int2:
-    SAVE_ALL
-
-    //jal     plat_irq_dispatch//dstling remove
-    //nop
-
-    jal     rt_interrupt_enter//dstling add
-    nop
-    jal     plat_irq_dispatch
-    nop
-    jal     rt_interrupt_leave
-    nop
-
-
-
-	
-    RESTORE_ALL_AND_RET
-    .set reorder
-
-
-
-
-    .set noreorder
-    .globl handle_reserved
-handle_reserved:
-    .set    mips3
-    eret
-    .set    mips0
-    .set reorder
-
-
-/*
- *  Modify SR value, arg 1 = set bits, arg 2 = clear bits.
- */
-LEAF(CPU_SetSR)
-    mfc0    v0, COP_0_STATUS_REG
-    not v1, a1
-    and v1, v0
-    or  v1, a0
-    mtc0    v1, COP_0_STATUS_REG
-    NOP8
-    j   ra
-    nop
-END(CPU_SetSR)
-
-
-
-//====================dstling add=======================
-		.set	reorder
-	
-		.globl	cp0_get_cause
-	cp0_get_cause:
-		mfc0	v0, CP0_CAUSE
-		jr	ra
-		nop
-	
-		.globl	cp0_get_status
-	cp0_get_status:
-		mfc0	v0, CP0_STATUS
-		jr	ra
-		nop
-	
-		.globl	cp0_get_hi
-	cp0_get_hi:
-		mfhi	v0
-		jr	ra
-		nop
-	
-		.globl	cp0_get_lo
-	cp0_get_lo:
-		mflo	v0
-		jr	ra
-		nop
-
-
-	.extern tlb_refill_handler
-
-	/* Exception Handler */
-
-	/* 0x0 - TLB refill handler */
-	//.section .vectors.1, "ax", %progbits
-	.global tlb_refill_exception
-	//.type	tlb_refill_exception,@function
-tlb_refill_exception:
-	j	tlb_refill_handler
-	nop
-
-	// 0x180 - Exception/Interrupt handler 
-	/*
-	.section .vectors.3, "ax", %progbits
-	.global general_exception
-	.type	general_exception,@function
-general_exception:
-	j	_general_exception_handler
-	nop
-
-_general_exception_handler:
-	.set	noreorder
-	la	k0, mips_irq_handle
-	jr	k0
-	nop
-	.set	reorder
-*/

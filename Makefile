@@ -36,7 +36,9 @@ SRC_C = $(wildcard lib/*.c example/*.c app/*.c libc/*.c libm/*.c \
 			os/net/lwip-1.4.1/src/netif/*.c\
 			os/net/lwip-1.4.1/src/arch/*.c\
 			os/hardware/*.c\
+			os/hardware/nand/*.c\
 			os/filesys/*.c\
+			os/filesys/libz/*.c\
 			)
 			
 OBJS = $(patsubst %.S, %.o, $(SRC_S)) $(patsubst %.c, %.o, $(SRC_C))  # 注意汇编文件一定要在前面
@@ -55,7 +57,7 @@ VPATH += include
 LIBS = 
 
 #编译参数
-CCFLAGS = -mno-abicalls -fno-pic -g -Wall -Wstrict-prototypes -Wno-uninitialized -Wno-format -Wno-main -O2 -G 0 -mips2 -fno-builtin -nostdinc 
+CCFLAGS = -DTARGETNAME="\"FCR\"" -mno-abicalls -fno-pic -g -Wall -Wstrict-prototypes -Wno-uninitialized -Wno-format -Wno-main -O2 -G 0 -mips2 -fno-builtin -nostdinc 
 AFLAGS  = -mno-abicalls -fno-pic -G 0 -mips2 -Wall -mno-abicalls -fno-builtin
 #链接参数
 LDFLAGS = -m elf32ltsmip -G 0 -static -n -nostdlib -N

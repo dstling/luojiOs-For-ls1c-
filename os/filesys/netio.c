@@ -211,7 +211,7 @@ int netwrite (int fd, const void *buf, size_t nb)
 		return (-1);
 }
 
-long netlseek (int fd, long offs, int how)
+off_t netlseek (int fd, off_t offs, int how)
 {
 	NetFile *nfp;
 

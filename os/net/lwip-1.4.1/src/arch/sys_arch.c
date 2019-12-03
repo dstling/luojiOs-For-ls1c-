@@ -331,7 +331,7 @@ void sys_sem_signal(sys_sem_t *sem)
 
 sys_thread_t sys_thread_new(const char *name, lwip_thread_fn function, void *arg, int stacksize, int prio)
 {
-    return thread_join_init(name, function, arg, stacksize, prio, 20);//tick=20
+    return thread_join_init(name, function, arg, stacksize, prio, TCPIP_THREAD_TICK);//tick=20
 }
 
 err_t sys_mbox_new(sys_mbox_t *mbox, int size)

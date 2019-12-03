@@ -70,7 +70,18 @@
 #define SR_INT_ENAB		0x00000001
 /*#define SR_INT_MASK		0x0000ff00*/
 
-
+/*
+union cpuprid {
+	int	cpuprid;
+	struct {
+		u_int	cp_minrev:4;	
+		u_int	cp_majrev:4;	
+		u_int	cp_imp:8;	
+		u_int	pad1:16;	
+	} cpu;
+};
+union	cpuprid CpuProcessorId;
+*/
 
 
 #endif

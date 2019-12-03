@@ -1,123 +1,27 @@
-
+#include <types.h>
 #include <stdio.h>
 #include <shell.h>
 #include <rtdef.h>
-#include "queue.h"
-#include "filesys.h"
+#include <filesys.h>
 
-#define DEBUG_FILESYS
-
+//#define DEBUG_FILESYS
 #ifdef DEBUG_FILESYS
 #define DebugPR printf("Debug info %s %s:%d\n",__FILE__ , __func__, __LINE__)
-#define debug_filesys printf
+#define debug_filesys(format, arg...) printf("debug_filesys: " format "\n", ## arg)
 #else
 #define DebugPR
-#define debug_filesys
+#define debug_filesys(format, arg...)
 #endif
 
 int errno;
 
 File _file[OPEN_MAX] =
 {
-	{0} 	// stdin 
+	{0} 	
 	//{1}, 	// stdout 
-	//{1},  	// stderr 
-	//{1},  	// kbdin 
-	//{1}  	// vgaout 
 };
 
 SLIST_HEAD(FileSystems, FileSystem) FileSystems = SLIST_HEAD_INITIALIZER(FileSystems);
-
-int strbequ(const char *s1, const char *s2)
-{
-
-	if (!s1 || !s2)
-		return (0);
-	for (; *s1 && *s2; s1++, s2++)
-		if (*s1 != *s2)
-			return (0);
-	if (!*s2)
-		return (1);
-	return (0);
-}
-
-char *strposn(const char *p, const char *q)
-{
-	const char *s, *t;
-
-	if (!p || !q)
-		return (0);
-
-	if (!*q)
-		return ((char *)(p + strlen (p)));
-	for (; *p; p++) 
-	{
-		if (*p == *q) 
-		{
-			t = p;
-			s = q;
-			for (; *t; s++, t++) 
-			{
-				if (*t != *s)
-					break;
-			}
-			if (!*s)
-				return ((char *)p);
-		}
-	}
-	return (0);
-}
-/** int strpat(p,pat) return 1 if pat matches p, else 0; wildcards * and ? */
-int strpat(const char *s1, const char *s2)
-{
-	char *p, *pat;
-	char *t, tmp[MAXLN];
-	char src1[MAXLN], src2[MAXLN];
-
-	if (!s1 || !s2)
-		return (0);
-
-	p = src1;
-	pat = src2;
-	*p++ = BANCHOR;
-	while (*s1)
-		*p++ = *s1++;
-	*p++ = EANCHOR;
-	*p = 0;
-	*pat++ = BANCHOR;
-	while (*s2)
-		*pat++ = *s2++;
-	*pat++ = EANCHOR;
-	*pat = 0;
-
-	p = src1;
-	pat = src2;
-	for (; *p && *pat;) 
-	{
-		if (*pat == '*') {
-			pat++;
-			for (t = pat; *t && *t != '*' && *t != '?'; t++);
-			strncpy (tmp, pat, t - pat);
-			tmp[t - pat] = '\0';
-			pat = t;
-			t = strposn (p, tmp);
-			if (t == 0)
-				return (0);
-			p = t + strlen (tmp);
-		}
-		else if (*pat == '?' || *pat == *p) {
-			pat++;
-			p++;
-		}
-		else
-			return (0);
-	}
-	if (!*p && !*pat)
-		return (1);
-	if (!*p && *pat == '*' && !*(pat + 1))
-		return (1);
-	return (0);
-}
 
 //dname mtd0/xx  or fs/yaffs2@mtd1/xx
 static int __try_open(const char *fname, int mode, char *dname, int lu, int fstype)
@@ -126,8 +30,7 @@ static int __try_open(const char *fname, int mode, char *dname, int lu, int fsty
 
 	SLIST_FOREACH(fsp, &FileSystems, i_next)
 	{
-		//debug_filesys("fname:%s dname:%s fsp->devname:%s\n",fname,dname,fsp->devname);
-		//比对完后面这个字符串 如果相同则返回1 否则返回0
+		debug_filesys("fname:%s dname:%s fsp->devname:%s\n",fname,dname,fsp->devname);
 		if (dname && strbequ(dname, fsp->devname)) //dname=:fs/yaffs2@mtd1/home/test5.txt  fsp->devname=fs/yaffs2
 		{
 			if(fsp->open)
@@ -187,8 +90,9 @@ int open(const char *filename,int mode)//mode=0 read mode=1 write mode=2 read an
 		free(fname,0);
 		return -1;
 	}
+	memset(&_file[lu],0,sizeof(_file[lu]));
 	_file[lu].valid = 1;
-
+	
 	dname = (char *)fname;
 	if (strncmp (dname, "/dev/", 5) == 0) 
 	{
@@ -266,8 +170,21 @@ int read (int fd,void *buf,unsigned int n)
 			return (-1);
 	else
 		return (-1);
+}
+int write (int fd, const void *buf, size_t n)
+{
+	if ((fd < OPEN_MAX) && _file[fd].valid ) {
+		if (_file[fd].fs->write)
+			return (((_file[fd]).fs->write) (fd, buf, n));
+		else
+			return (-1);
+	}
+	else {
+		return (-1);
+	}
 }
-long lseek(int fd, long offset, int whence)
+
+off_t lseek(int fd, off_t offset, int whence)
 {
 	if ((fd < OPEN_MAX) && _file[fd].valid )
 		if (_file[fd].fs->lseek)
@@ -333,6 +250,14 @@ void tftpOpenEntry(void*userdata)
 		while(1)
 		{
 			retSize=read(fd,readTmp,tftpEveryReadSize);
+			if(retSize==-1)
+			{
+				printf("tftpOpenEntry read errod,ret:%d\n",retSize);
+				close(fd);
+				free(readTmp);
+				free(tftpOpenfile.recvBuf);
+				return ;
+			}
 			if(retSize<1)//读完了
 				break;
 			
@@ -363,7 +288,7 @@ void tftpOpenEntry(void*userdata)
 		free(tftpOpenfile.recvBuf);
 	}
 	else
-		printf("tftpOpenEntry error.\n");
+		printf("tftpOpenEntry open error.\n");
     //rt_hw_interrupt_enable(temp);
 	THREAD_DEAD_EXIT;	
 }
@@ -411,7 +336,7 @@ void updateLuojios(void)
 	strcat(tftpOpenfile.tftpOpenAddr,"/");
 	strcat(tftpOpenfile.tftpOpenAddr,pmonFileName);
 	tftpOpenfile.openMode=0;
-	thread_join_init("tftpThread",tftpOpenEntry,NULL,4092,16,50);
+	thread_join_init("updateLuojios",tftpOpenEntry,NULL,4092,16,50);
 }
 FINSH_FUNCTION_EXPORT(updateLuojios,flash new bootloader by tftp);
 

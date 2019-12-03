@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <shell.h>
 #include <env.h>
+#include <ls1c_regs.h>
+#define readl(addr) (*(volatile unsigned long *)(addr))
 
 #define NVRAM_OFFS			0							//参数保存位置偏移 这里不偏移
 //#define NVRAM_SECSIZE		(4*1024) 					//环境变量空间 4k=4096byte 默认包含在256kB的空间尾部 之所以是4k，是为了环境变量参数重写入flash 最小4k擦除 免得破坏其他数据
@@ -31,21 +33,90 @@ struct envpair stdenvtab[]={
 	{ENV_TFTP_SERVER_IP_NAME,	ENV_TFTP_SERVER_IP},
 	{ENV_TFTP_PMON_FILE_NAME,	ENV_TFTP_PMON_FILE},
 
-	{"loadelfAddr",	LOAD_ELF_ADDR_FILE},
+	{"mtdparts", "ls1x-nand:14M@0(kernel),100M@14M(rootfs),14M@114M(data);spi-flash:512K@0(pmon),4K@520192(nvram)"},
+
+	//下面这些参数在引导linux内核的时候可能有用，在g时传入内核
+	{"memsize", "32"},
+	{"highmemsize", "0"},
+	{PLL_REG0_NAME, "0x8000549c"},
+	{PLL_REG1_NAME, "0x00008283"},
+	{"cpuclock", "252000000"},
+	{"busclock", "126000000"},
+	{"xres", "480"},
+	{"yres", "272"},
+	{"depth", "16"},
+	{"systype", "FCR"},
+	{"moresz", "10"},
+	{"brkcmd", "l -r @cpc 1"},
+	{"TZ", "UTC8"},
+		
+	{"datasize", "-b"},
+
+	{"dlecho", "off"},
+	{"dlproto", "none"},
+	{"bootp", "no"},
+	{"hostport", "tty0"},
+	{"inalpha", "hex"},
+	{"inbase", "16"},
+	{"regstyle", "sw"},
+	{"rptcmd", "trace"},
+	{"trabort", "^K"},
+	{"ulcr", "cr"},
+	{"uleof", "%"},
+	{"showsym", "yes"},
+	{"fpfmt", "both"},
+	{"fpdis", "yes"},
+	{"bootdelay", "8"},
 
 	
+	//{"loadelfAddr",	LOAD_ELF_ADDR_FILE},
+	{"loadelfAddr", LOAD_ELF_ADDR_FILE2},
+	{"append", "console=ttyS2,115200 root=/dev/mtdblock1 rw rootfstype=yaffs2 video=ls1bfb:vga1024x768-24@60 panic=10 noswap"},
+	//{"append", "console=ttyS2,115200 root=/dev/mtdblock1 rw rootfstype=yaffs2 video=ls1bfb:vga480x272-24@60 panic=10 noswap "},//lpj=501248
+	//{"append", "console=ttyS2,115200 root=/dev/mtdblock1 rw rootfstype=yaffs2 video=ls1bfb:vga320x240-16@60 panic=10 noswap"},
+	//{"append", "console=ttyS2,115200 root=/dev/mtdblock1 rw rootfstype=yaffs2  panic=10 noswap"},
 	//{"",""},
 	//{"",""},
+	{"al", "mtd0"},
 	{0}
 };
 
-int striequ(const char *s1, const char *s2)//完全相等返回1
+void envsize (int *ec, int *slen)
 {
-	if(strlen(s1)==strlen(s2)&&strcmp(s1, s2)==0)
-		return 1;
-	return 0;
-}
+	struct envpair *ep;
 
+	*ec = 0;
+	*slen = 0;
+	for (ep = envvar; ep < &envvar[NVAR]; ep++) 
+	{
+		if (ep->name) 
+		{
+			*ec += 1;
+			*slen += strlen (ep->name) + 2; /* = and NULL */
+			if (ep->value) {
+				*slen += strlen(ep->value);
+			}
+		}
+	}
+}
+void envbuild (char **vsp, char *ssp)
+{
+	struct envpair *ep;
+
+	for(ep = envvar; ep < &envvar[NVAR]; ep++) 
+	{
+		if (ep->name) 
+		{
+			*vsp++ = ssp;
+			ssp += sprintf (ssp, "%s=", ep->name) + 1;
+			if (ep->value) 
+			{
+				ssp += sprintf(ssp - 1, "%s", ep->value);
+			}
+		}
+	}
+	*vsp++ = (char *)0;
+}
 
 char *getenv (const char *name)
 {
@@ -191,6 +262,7 @@ void resetNorEnvSpace(void)
 		nvrambuf[3] = '\0';
 		cksum((void *)nvrambuf,NVRAM_SECSIZE, 1);//NVRAM_SPECIAL_SIZE
 		printf("Warning! Checksum Env datas fail in norFlash. Reset at norFlash Adddress:0X%08X\n",bootRomSize-NVRAM_SECSIZE);
+		printf("Wait a minute...\n");
 		//show_hex(nvramsecbuf,NVRAM_SECSIZE,0);
 		nvram_put(nvramsecbuf);
 		/*
@@ -271,6 +343,7 @@ int set_rom_env(char *name, char *value)//更新rom中的环境变量设置
 	char *nvrambuf;
 	char *nvramsecbuf;
 
+	//printf("Setting env datas into norFlash,name:%s,value:%s.\n",name,value);
 	// Calculate total env mem size requiered 
 	envlen = strlen(name);
 	if(envlen == 0) 
@@ -409,7 +482,6 @@ int set_rom_env(char *name, char *value)//更新rom中的环境变量设置
 	bcopy(&pll_reg0, &nvramsecbuf[PLL_OFFS], 4);
 	bcopy(&pll_reg1, &nvramsecbuf[PLL_OFFS + 4], 4);
 	*/
-	printf("Setting newest env datas into norFlash Space.\n");
 	nvram_put(nvramsecbuf);
 	free(nvramsecbuf);
 	return(1);
@@ -611,7 +683,17 @@ int set(int argc, char **argv)
 		{
 			if (ep->name) 
 			{
-				printf("%24s  =%s\n",ep->name,ep->value);
+				printf("%16s = %s\n",ep->name,ep->value);
+				if(striequ(ep->name,PLL_REG0_NAME))
+				{
+					unsigned int pllreg0value=readl(LS1C_START_FREQ);
+					printf("in cpu_reg\n%16s = 0x%08x\n",ep->name,pllreg0value);
+				}
+				if(striequ(ep->name,PLL_REG1_NAME))
+				{
+					unsigned int pllreg1value=readl(LS1C_CLK_DIV_PARAM);
+					printf("in cpu_reg\n%16s = 0x%08x\n",ep->name,pllreg1value);
+				}
 			}
 		}
 	}

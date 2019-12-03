@@ -1,11 +1,19 @@
-#define __mips__
+#include <types.h>
+#include <stdio.h>
+#include <endian.h>
+#include <string.h>
+#include <filesys.h>
 
-#define	NELF32ONLY	1
+#include "elf.h"
 
-
-#define	NGZIP	0//默认为1 这里调试时候临时改为1 暂时减小移植工作量 gzip支持
 #define DebugPR printf("loadelfDebug info %s %s:%d\n",__FILE__ , __func__, __LINE__)
 #define perror printf
+
+//#define __mips__
+#define	NELF32ONLY	1
+
+#define	NGZIP	1//默认为1 没有zlib的时候这个地方可设置0 这里调试时候临时改为0暂时减小移植工作量 gzip支持
+
 #define SFLAG 0x0001		/* Don't clear symbols */
 #define BFLAG 0x0002		/* Don't clear breakpoints */
 #define EFLAG 0x0004		/* Don't clear exceptions */
@@ -24,26 +32,8 @@
 #define ZFLAG 0x8000
 #define GFLAG 0x8001		/*load into nand flash */
 
-#define	SEEK_SET	0	/* set file offset to offset */
-#define	SEEK_CUR	1	/* set file offset to current plus offset */
-#define	SEEK_END	2	/* set file offset to EOF plus offset */
-
-#define BYTE_ORDER 1234
-#define LITTLE_ENDIAN	1234
-#define BIG_ENDIAN	4321
-
-
-#include <types.h>
-#include <stdio.h>
-
-#include <string.h>
-
-#include "elf.h"
 
 #define	roundup(x, y)	((((x)+((y)-1))/(y))*(y))
-#define min(a,b) ( a < b ? a : b)
-
-
 #define CACHED_MEMORY_ADDR      0x80000000
 #define PHYS_TO_CACHED(x)       ((unsigned)(x) | CACHED_MEMORY_ADDR)
 
@@ -53,58 +43,204 @@ unsigned long long dl_loffset=0;//没用吧
 char *dl_Oloadbuffer=0;//没用吧
 
 
-/*
-
-#include <pmon.h>
-#include <pmon/loaders/loadfn.h>
-
-#ifdef __mips__
-#include <machine/cpu.h>
-#endif
-
-
-#include "gzip.h"
-#include "elf32only.h"
-*/
-
-
 #if NGZIP > 0
 //#include "../filesys/gzipfs.h"
 #endif /* NGZIP */
 
-long	dl_entry;	/* entry address */
-long	dl_offset;	/* load offset */
-long	dl_minaddr;	/* minimum modified address */
-long	dl_maxaddr;	/* maximum modified address */
+static long	dl_entry;	/* entry address */
+static long	dl_offset;	/* load offset */
+static long	dl_minaddr;	/* minimum modified address */
+static long	dl_maxaddr;	/* maximum modified address */
+int dl_chksum=0;
 
 
 extern long dl_minaddr;
 extern long dl_maxaddr;
 extern unsigned long long dl_loffset;
 extern int highmemcpy(long long dst, long long src, long long count);
-extern int memorysize;
+int memorysize;
 static int	bootseg;
 static unsigned long tablebase;
 static unsigned int lastaddr=0;;
 extern  char *dl_Oloadbuffer;
 extern unsigned long long dl_loffset;
 static int myflags;
+#define CLIENTPC 0x80100000
+
+typedef struct Sym {
+    struct Sym     *next;
+    unsigned long   value;
+    char            name[1];
+} Sym;
+#define NHASH	127
+static Sym 	*symhash[NHASH];
+
+#define ALPHA	0
+#define NUMERIC	1
+static Sym	**symsort[2];
+
+static int	maxsymlen;
+static int	nsyms;
+
+static void flushsort (int type)
+{
+    if (symsort[type]) 
+	{
+		free ((char *) symsort[type]);
+		symsort[type] = 0;
+    }
+}
+void clrhndlrs(void)
+{
+	
+}
+
+void clrsyms(void)
+{
+    Sym *sym, *nsym;
+    int i;
+
+    for (i = 0; i < NHASH; i++) 
+	{
+		for (sym = symhash[i]; sym; sym = nsym) 
+		{
+		    nsym = sym->next;
+		    free ((char *) sym);
+		}
+		symhash[i] = 0;
+    }
+
+    flushsort (ALPHA);
+    flushsort (NUMERIC);
+    maxsymlen = 0;
+    nsyms = 0;
+}
+
+static unsigned int strhash (const char *s)
+{
+    unsigned int h;
+    for (h = 0; *s; s++) 
+	{
+        h = (h << 4) + *s;
+        if (h > 0x0fffffff) 
+		{
+            h ^= (h >> 24) & 0xf0;
+            h &= 0x0fffffff;
+        }
+    }
+    return h;
+}
+
+static Sym *getsymbyname (char *name)
+{
+    unsigned h = strhash (name) % NHASH;
+    Sym *sym;
+    
+    if (nsyms == 0)
+      return 0;
+
+    for (sym = symhash[h]; sym; sym = sym->next) 
+	{
+		if (name[0] == sym->name[0] && !strcmp(name+1, sym->name+1))
+		  return sym;
+    }
+    return sym;
+}
+
+int newsym (char* name,u_int32_t value)
+{
+    Sym         *sym;
+    unsigned int h;
+    int		len;
+
+    h = strhash (name) % NHASH;
+    for (sym = symhash[h]; sym; sym = sym->next) 
+	{
+		if (sym->name[0] == name[0] && !strcmp(sym->name+1, name+1)) 
+		{
+		    if (sym->value != value) 
+			{
+				sym->value = value;
+				flushsort (NUMERIC);
+		    }
+		    return (1);
+		}
+    }
+
+    flushsort (ALPHA);
+    flushsort (NUMERIC);
+
+    len = strlen (name);
+    sym = (Sym *) malloc (sizeof (Sym) + len);
+    if (!sym)
+      return (0);
+
+    memcpy (sym->name, name, len + 1);
+    sym->value = value;
+
+    sym->next = symhash[h];
+    symhash[h] = sym;
+
+    if (len > maxsymlen)
+      maxsymlen = len;
+    nsyms++;
+    return (1);
+}
+
+static void defsym (char*name,u_int32_t value)
+{
+    if(!getsymbyname (name))
+		newsym (name, value);
+}
+
+void defsyms (u_int32_t minaddr,u_int32_t maxaddr,u_int32_t pc)
+{
+    extern int	    start[];
+    defsym("Pmon", (unsigned long) start);
+    if (minaddr != ~0)
+		defsym("_ftext", minaddr);
+    if (maxaddr != 0)
+		defsym("etext", maxaddr);
+    defsym ("start", pc);
+}
+
+void syminit (void)
+{
+	memorysize=kmempos;
+
+	printf("syminit memorysize:0x%08x\n",memorysize);//syminit memorysize:0x01100000
+    //defsyms((u_int32_t)sbrk(0) + 1024, memorysize | (CLIENTPC & 0xc0000000), CLIENTPC);
+}
+
+void dl_initialise (unsigned long offset, int flags)
+{
+	//printf("dl_initialise offset:0x%08x\n",offset);
+    if (!(flags & SFLAG))
+		clrsyms ();
+    /*
+    if (!(flags & BFLAG))
+		clrbpts ();
+	*/
+    if (!(flags & EFLAG))
+		clrhndlrs ();
+
+    dl_minaddr = ~0;
+    dl_maxaddr = 0;
+    dl_chksum = 0;
+    dl_offset = offset;
+}
 
 int highmemcpy(long long dst,long long src,long long count)
 {
-
-	 memcpy(dst,src,count);
+	memcpy(dst,src,count);
 	return 0;
 }
-
 
 int highmemset(long long addr,char c,long long count)
 {
-
 	memset(addr,c,count);
 	return 0;
 }
-
 
 int md_valid_load_addr(void * first_addr, void * last_addr)
 {
@@ -129,7 +265,8 @@ int dl_checkloadaddr (void *vaddr, int size, int verbose)
 {
 	unsigned long addr = (unsigned long)vaddr;
 
-	if (md_valid_load_addr(addr, addr + size)) {
+	if (md_valid_load_addr(addr, addr + size)) 
+	{
 		if (verbose)
 			printf ("\nattempt to load into mappable region");
 		return 0;
@@ -140,7 +277,7 @@ int dl_checkloadaddr (void *vaddr, int size, int verbose)
 int dl_checksetloadaddr (void *vaddr, int size, int verbose)//检查load 设置的启动地址
 {
 	unsigned long addr = (unsigned long)vaddr;
-
+	//printf("dl_checksetloadaddr dl_minaddr:0x%08x,dl_maxaddr:0x%08x,addr:0x%08x\n",dl_minaddr,dl_maxaddr,addr);
 	if (!dl_checkloadaddr(vaddr, size, verbose))
 		return (0);//不应该到这
 
@@ -152,11 +289,17 @@ int dl_checksetloadaddr (void *vaddr, int size, int verbose)//检查load 设置�
 	return 1;//应该到这里
 }
 
-int newsym (char	*name,u_int32_t value)//暂未移植
-{
 
-	return 1;//正常返回1
+
+void dl_setloadsyms (u_int32_t thread_pc)
+{
+	printf("dl_setloadsyms dl_minaddr:0x%08x,dl_maxaddr:0x%08x\n",dl_minaddr,dl_maxaddr);
+	defsyms (dl_minaddr, dl_maxaddr, thread_pc);
 }
+
+
+
+//=======================================================================
 
 static int bootread(int fd, void *addr, int size)
 {
@@ -178,10 +321,12 @@ static int bootread(int fd, void *addr, int size)
 	{
 		if (myflags&OFLAG) 
 		{
-			if (lastaddr)dl_loffset += (unsigned long long)(addr-lastaddr);
+			if (lastaddr)
+				dl_loffset += (unsigned long long)(addr-lastaddr);
 			lastaddr = addr;
 			i = 0;
-			while (i<size) {
+			while (i<size) 
+			{
 				int i1;
 				int len = min(0x1000,size-i);
 				i1 = gz_read (fd,dl_Oloadbuffer,len);
@@ -193,7 +338,8 @@ static int bootread(int fd, void *addr, int size)
 					break;
 			}
 		}
-		else i = gz_read (fd, addr + dl_offset, size);
+		else 
+			i = gz_read (fd, addr + dl_offset, size);
 	} else
 #endif /* NGZIP */
 
@@ -209,7 +355,8 @@ static int bootread(int fd, void *addr, int size)
 				int i1;
 				int len=min(0x1000,size-i);
 				i1=read (fd,dl_Oloadbuffer,len);
-				if(i1<0)break;
+				if(i1<0)
+					break;
 				highmemcpy(dl_loffset+i,dl_Oloadbuffer,i1);
 				i+=i1;
 				if(i1<len)
@@ -220,7 +367,6 @@ static int bootread(int fd, void *addr, int size)
 		{
 			//printf("\nbootread buf addr:0x%08X,size:%d\n",addr + dl_offset,size);
 			i = read (fd, addr + dl_offset, size);//开始读取ph[0]指定位置的数据
-			//DebugPR;
 		}
 	}
 
@@ -232,11 +378,9 @@ static int bootread(int fd, void *addr, int size)
 			printf ("\nsegment read");
 		return (-1);
 	}
-	//DebugPR;
 	//printf("bootread size:%d\n",size);
 	return size;
 }
-
 
 static int bootclear(int fd, void *addr, int size)
 {
@@ -396,8 +540,6 @@ static int elfreadsyms(int fd, Elf32_Ehdr *eh, Elf32_Shdr *shtab, int flags)
 		printf ( "%d syms ", nsym);
 	}
 
-
-
 	/*
 	 *  Allocate tables in correct order so the kernel grooks it.
 	 *  Then we read them in the order they are in the ELF file.
@@ -407,28 +549,13 @@ static int elfreadsyms(int fd, Elf32_Ehdr *eh, Elf32_Shdr *shtab, int flags)
 	symtab = gettable(size, "symtab", flags);
 	symend = (char *)symtab + size;
 
-
 	do {
 		if(shstrh->sh_offset < offs && shstrh->sh_offset < strh->sh_offset) 
 		{
-#if 0
-			/*
-			 *  We would like to read the shstrtab from the file but since this
-			 *  table is located in front of the shtab it is already gone. We can't
-			 *  position backwards outside the current segment when using tftp.
-			 *  Instead we create the names we need in the string table because
-			 *  it can be reconstructed from the info we now have access to.
-			 */
-			if (!readtable (shstrh->sh_offset, (void *)shstrtab,
-					shstrh->sh_size, "shstring", flags)) {
-				return(0);
-			}
-#else
 			memset(shstrtab, 0, shstrh->sh_size);
 			strcpy(shstrtab + shstrh->sh_name, ".shstrtab");
 			strcpy(shstrtab + strh->sh_name, ".strtab");
 			strcpy(shstrtab + sh->sh_name, ".symtab");
-#endif
 			shstrh->sh_offset = 0x7fffffff;
 		}
 
@@ -478,7 +605,6 @@ static int elfreadsyms(int fd, Elf32_Ehdr *eh, Elf32_Shdr *shtab, int flags)
 	} 
 	else 
 	{
-
 		/*
 		 *  Add all global sybols to PMONs internal symbol table.
 		 */
@@ -529,7 +655,7 @@ long load_elf (int fd, char *buf, int *n, int flags)
 
 #ifdef __mips__
 	tablebase = PHYS_TO_CACHED(kmempos);//memorysize
-	printf("tablebase:0x%08x,kmempos:0x%08x\n",tablebase,kmempos);//tablebase:0x81100000,memorysize:0x01100000
+	//printf("tablebase:0x%08x,kmempos:0x%08x\n",tablebase,kmempos);//tablebase:0x81100000,memorysize:0x01100000
 #else
 	tablebase =kmempos; //memorysize;
 #endif
@@ -554,19 +680,18 @@ long load_elf (int fd, char *buf, int *n, int flags)
 	//printf("load_elf buf addr:0x%08X\n",buf);
 	ep = (Elf32_Ehdr *)buf;
 	//printf("load_elf ep addr:0x%08X sizeof(*ep):%d *n=%d\n",ep ,sizeof(*ep),*n);
-	
 	if (sizeof(*ep) > *n) 
 	{
 #if NGZIP > 0
 		if(myflags&ZFLAG)
 			*n += gz_read (fd, buf+*n, sizeof(*ep)-*n);
-else 
+		else 
 #endif /* NGZIP */
 		{
 			lseek(fd,*n,0);	
-			*n += read (fd, buf+*n, sizeof(*ep)-*n);//先从tftp服务器读取elf header sizeof(*ep)-*n大小的数据到buf
-			//printf("read elf head size:%d\n",*n);
-			//show_hex(buf, *n,0);
+			*n += read(fd, buf+*n, sizeof(*ep)-*n);//先从tftp服务器读取elf header sizeof(*ep)-*n大小的数据到buf
+			printf("read elf head size:%d\n",*n);
+			dataHexPrint2(ep, 52,0,"read elf head2");
 		}
 		if (*n < sizeof(*ep)) 
 		{
@@ -579,12 +704,8 @@ else
 	}
 
 	/* check header validity */
-	if (ep->e_ident[EI_MAG0] != ELFMAG0 ||
-	    ep->e_ident[EI_MAG1] != ELFMAG1 ||
-	    ep->e_ident[EI_MAG2] != ELFMAG2 ||
-	    ep->e_ident[EI_MAG3] != ELFMAG3) 
+	if (ep->e_ident[EI_MAG0] != ELFMAG0 ||ep->e_ident[EI_MAG1] != ELFMAG1 ||ep->e_ident[EI_MAG2] != ELFMAG2 ||ep->e_ident[EI_MAG3] != ELFMAG3) 
 	{
-
 #if NGZIP > 0
 		if(myflags&ZFLAG)		
 			gz_close(fd);
@@ -594,7 +715,6 @@ else
 	}
 
 	printf ( "(elf)\n");
-
 	{
 		char *nogood = (char *)0;
 #if (NELF32ONLY==0)
@@ -628,8 +748,6 @@ else
 			  )
 			nogood = "incorrect machine type";
 
-
-
 		if (nogood) 
 		{
 			printf ("Invalid ELF: %s\n", nogood);
@@ -646,7 +764,8 @@ else
 	{
 		printf ( "missing program header (not executable)\n");
 #if NGZIP > 0
-if(myflags&ZFLAG)		gz_close(fd);
+	if(myflags&ZFLAG)		
+		gz_close(fd);
 #endif /* NGZIP */
 		return (-2);
 	}
@@ -663,7 +782,6 @@ if(myflags&ZFLAG)		gz_close(fd);
 	nbytes = ep->e_phnum * sizeof(Elf32_Phdr)+32;//size 96=32*3
 #endif
 	phtab = (Elf32_Phdr *) malloc (nbytes);
-	//printf("phtab addr:0x%08X nbytes:%d\n",phtab,nbytes);
 	if (!phtab) 
 	{
 		printf ("\nnot enough memory to read program headers");
@@ -688,12 +806,44 @@ if(myflags&ZFLAG)		gz_close(fd);
 	else
 #endif /* NGZIP */
 	//读取program header ep->e_entry在这里就已经被指定了
-	if (lseek (fd, ep->e_phoff, SEEK_SET) != ep->e_phoff ||read (fd, (void *)phtab, nbytes) != nbytes) 
+///*
+	{
+	//printf("load_elf dstling01\n");
+		off_t ret=lseek(fd, (off_t)ep->e_phoff, SEEK_SET);
+		if(ret==(off_t)ep->e_phoff)
+		{
+			unsigned int readRet=read(fd,(void *)phtab,nbytes);
+			if(readRet!= nbytes)
+			{
+				perror ("program header readRet!=nbytes,readRet:%d,nbytes:%d,ret:%d",readRet,nbytes,(int)ret);
+				free (phtab);
+				return (-2);
+			}
+			//printf("2program readRet:%d,nbytes:%d,ret:%d\n",readRet,nbytes,(int)ret);
+		}
+		else
+		{
+			perror("lseek error\n");
+			printf("ep->e_phoff:%d,ret:%lld,SEEK_SET:%d\n",ep->e_phoff,ret,SEEK_SET);
+			free (phtab);
+			return (-2);
+		}
+	}
+	//printf("load_elf dstling02\n");
+//*/
+
+/*
+	printf("load_elf dstling01\n");
+
+	if (lseek (fd, ep->e_phoff, SEEK_SET) != ep->e_phoff||read (fd,(void *)phtab,nbytes)!= nbytes) //这里read可能不在需要去硬件里面读取了
 	{
 		perror ("program header");
 		free (phtab);
 		return (-2);
 	}
+		
+	printf("load_elf dstling02\n");
+*/
 	//printf("ep->e_shoff:0x%08X phtab[0].p_offset:0x%08X,ep->e_entry:0x%08X.\n",ep->e_shoff ,phtab[0].p_offset,ep->e_entry);
 	//show_hex(phtab,nbytes,ep->e_phoff);
 	
@@ -737,7 +887,6 @@ if(myflags&ZFLAG)		gz_close(fd);
 				
 			if (!ph)
 				break;		/* none found, finished */
-			//ph->p_vaddr=0x80300000;//0x80730000  0x80737CC0
 			//printf("ph p_vaddr:0x%08X p_filesz:%d p_offset:0x%08X ph->p_memsz:%d \n",ph->p_vaddr,ph->p_filesz,ph->p_offset,ph->p_memsz);
 			/* load the segment */
 			if (ph->p_filesz) 
@@ -757,8 +906,7 @@ if(myflags&ZFLAG)		gz_close(fd);
 				}
 				else
 #endif /* NGZIP */
-				
-				if (lseek (fd, ph->p_offset, SEEK_SET) != ph->p_offset) 
+				if (lseek(fd,ph->p_offset,SEEK_SET)!= ph->p_offset) 
 				{
 					printf ( "seek failed (corrupt object file?)\n");
 					if (shtab)
@@ -766,11 +914,9 @@ if(myflags&ZFLAG)		gz_close(fd);
 					free (phtab);
 					return (-2);
 				}
-				//DebugPR;
 				//读取ph->p_offset指向的文件的数据至ph->p_vaddr内存				p_vaddr:0x80200000	638916			
-				if (bootread (fd, (void *)ph->p_vaddr, ph->p_filesz) != ph->p_filesz) //到这里有问题了
+				if (bootread(fd,(void*)ph->p_vaddr,ph->p_filesz)!= ph->p_filesz) //到这里有问题了
 				{
-					//DebugPR;
 					if (shtab) 
 						free (shtab);
 					free (phtab);
@@ -781,9 +927,8 @@ if(myflags&ZFLAG)		gz_close(fd);
 					return (-2);
 				}
 			}
-
 			
-			if((ph->p_vaddr + ph->p_memsz) > highest_load) 
+			if((ph->p_vaddr + ph->p_memsz)> highest_load) 
 				highest_load = ph->p_vaddr + ph->p_memsz;
 
 			if (ph->p_filesz < ph->p_memsz)//文件中占用的size 小于 内存映像中占用的size
@@ -791,7 +936,6 @@ if(myflags&ZFLAG)		gz_close(fd);
 			ph->p_type = PT_NULL; /* remove from consideration */
 		}
 
-		
 	}
 
 	if (flags & KFLAG) 

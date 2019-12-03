@@ -318,7 +318,8 @@ static void eth_tx_thread_entry(void* parameter)
     }
 }
 
-int eth_system_device_init(void)
+
+int eth_rt_tx_init(void)//tcpip线程的下级线程 用于网卡接收发送数据
 {
     long result = RT_EOK;
 
@@ -345,7 +346,6 @@ int eth_system_device_init(void)
                             RT_ETHERNETIF_THREAD_PREORITY, 16);
     return 0;
 }
-
 
 void list_if(void)
 {

@@ -21,8 +21,6 @@
 #include "../example/test_sys_tick.h"
 #include "../example/test_spi.h"
 
-
-
 // 硬浮点初始化
 void fpu_init(void)
 {
@@ -44,15 +42,13 @@ void fpu_init(void)
     return ;
 }
 
-
-
 void bsp_init(void)
 {
     // 初始化调试串口
     uart2_init();
     //init_printf_buf();
 	
-    // 硬浮点初始化
+    //硬浮点初始化
     fpu_init();
 
     // 初始化异常
@@ -60,10 +56,6 @@ void bsp_init(void)
 
     // 显示时钟信息
     clk_print_all();
-	
-
-	
-	//rt_hw_timer_init();
 
     return ;
 }
@@ -180,7 +172,16 @@ int main(void)
 
 	return(0);
 }
+int main2(void)
+{
+	uart2_init();
+	osMain();//os入口 裸机直接屏蔽此处即可
 
+    while (1)
+        ;
+
+	return(0);
+}
 
 
 

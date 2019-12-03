@@ -7,23 +7,17 @@
 
 #include "netio.h"
 #include "filesys.h"
+
 #define DebugPR printf("Debug info %s %s:%d\n",__FILE__ , __func__, __LINE__)
 
-
-
 #define	EUNDEF		0		/* not defined */
-
 #define	RRQ		01			/* read request */
 #define	WRQ		02			/* write request */
 #define	DATA	03			/* data packet */
 #define	ACK		04			/* acknowledgement */
 #define	ERROR	05			/* error code */
 
-#define	SEEK_SET	0	/* set file offset to offset */
-#define	SEEK_CUR	1	/* set file offset to current plus offset */
-#define	SEEK_END	2	/* set file offset to EOF plus offset */
-
-#define	TIMEOUT		100000		/* secs between rexmts */
+#define	TIMEOUT		500000		/* secs between rexmts */
 #define MAXREXMT	0x7fffffff		/* no of rexmts */
 
 static const int tftperrmap[] = {
@@ -131,7 +125,7 @@ static void tftpnxtblk (struct tftpfile *tfp)
 {
 	tfp->block++;
 	if (tfp->flags & O_NONBLOCK)
-		dotik (20000, 0);
+		dotik (20000,0);
 }
 
 static int synchnet(int	f)/* socket to flush */
@@ -190,21 +184,25 @@ static int tftprrq (struct tftpfile *tfp,struct tftphdr * req,int size)
 		switch (ans) 
 		{
 			case -1:
+			{
 				printf("tftp: select\n");
 				return (-1);
-			case 0:
-			if(rexmt==(MAXREXMT>>1))
-				myifup();
-			if (++rexmt > MAXREXMT) 
-			{
-				errno = ETIMEDOUT;
-				return (-1);
 			}
-			printf ("tftp: timeout, retry %d\n", rexmt);//这里会超时卡住
-			//rt_thread_sleep(100);
-			if(rexmt>5)//超时5次返回-2
-				return -2;
+			case 0:
+			{
+				if(rexmt==(MAXREXMT>>1))
+					myifup();
+				if (++rexmt > MAXREXMT) 
+				{
+					errno = ETIMEDOUT;
+					return (-1);
+				}
+				printf ("tftp: timeout, retry %d\n", rexmt);//这里会超时卡住
+				rt_thread_sleep(2000);
+				if(rexmt>100)//超时5次返回-2
+					return -2;
 			continue;
+			}
 		}
 
 		fromlen = sizeof (from);
@@ -260,6 +258,7 @@ static int tftprrq (struct tftpfile *tfp,struct tftphdr * req,int size)
 				return (-1);
 		}
 	}
+	return -1;
 }
 
 
@@ -274,7 +273,8 @@ static int  tftpwrq (struct tftpfile *tfp,struct tftphdr * req,int size)
 	struct timeval timo;
 	int rexmt = 0;
 
-	while (1) {
+	while (1) 
+	{
 #ifdef TFTPDBG
 		if (tftptrace)
 			tpacket("sent", req, size);
@@ -451,8 +451,11 @@ static int tftpopen (int fd, struct Url *url, int flags, int perms)
 		tfp->block = 1;
 		size = makerequest(RRQ, url->filename, rp, mode);
 		size = tftprrq (tfp, rp, size);
-		tfp->end = tfp->start + size;
-		printf("tftp open,size:%d\n",size);
+		printf("tftp open,tftprrq return size:%d\n",size);
+		if(size<0)
+			goto error;
+		else
+			tfp->end = tfp->start + size;
 	} 
 	else 
 	{
@@ -463,7 +466,6 @@ static int tftpopen (int fd, struct Url *url, int flags, int perms)
 	
 	if (size >= 0)
 		return 0;
-
 
 error:
 	if (tfp->sock >= 0)
@@ -567,11 +569,11 @@ static int tftpwrite (int fd,const void * buf,int nwrite)
 	return nwrite - nb;
 }
 
-static long tftplseek (int fd,long offs,int how)
+static off_t tftplseek (int fd,off_t offs,int how)
 {
 	NetFile *nfp;
 	struct tftpfile *tfp;
-	long noffs;
+	off_t noffs;//long
 
 	nfp = (NetFile *)_file[fd].data;
 	tfp = (struct tftpfile *)nfp->data;

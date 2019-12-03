@@ -18,25 +18,14 @@
 #include "mips_def.h"
 #include "stackframe.h"
 #include "stackframe_fpu.h"
+#define	NOP8	nop;nop;nop;nop;nop;nop;nop;nop
 
 //extern unsigned long stack;
 #define SYSTEM_STACK          (stack)//(start - 0x4000)		/* the kernel system stack address */
 
-	.set	noreorder
-	.data
-	.global LOAD_THREAD_STACK	//load elf调用的stack地址
-	.common LOAD_THREAD_STACK, 128*8
-	
-	.data
-	.global LOAD_THREAD			//load elf使用的thread地址
-	.common LOAD_THREAD, 128*8
-
-
-
-
     .section ".text", "ax"
     .set noreorder
-    .set	mips32r2
+    //.set	mips32r2
 /*
  * rt_base_t rt_hw_interrupt_disable()
  */
@@ -57,12 +46,15 @@ rt_hw_interrupt_enable:
 	//是否应该是0x00008000 IP7 tick中断??
     ori     a0, 0x00008000   	
     mtc0    a0, CP0_STATUS
-    ehb
+    //ehb
+    NOP8
     mfc0    v0, CP0_CAUSE
-    ehb
-    or      v1, v0, 0x800000                 //EBASE + 0x200 //23位 IV 该位写入1 表示中断将使用一个特殊的异常入口点                                                                                                
+    //ehb
+    NOP8
+    or      v1, v0, 0x800000   //EBASE + 0x200 //23位 IV 该位写入1 表示中断将使用一个特殊的异常入口点                                                                                                
     mtc0    v1, CP0_CAUSE
-    ehb
+    //ehb
+    NOP8
     jr      ra
     nop
 
@@ -90,8 +82,7 @@ rt_hw_context_switch:
     .globl rt_hw_context_switch_to
 rt_hw_context_switch_to:
     lw      sp, 0(a0)       /* get new task stack pointer */
-
-    RESTORE_FPU
+    //RESTORE_FPU
     RESTORE_ALL_AND_RET
 
 /*
@@ -117,6 +108,10 @@ _reswitch:
     jr      ra
     nop
 
+
+
+
+
 /*
  * void rt_hw_context_switch_interrupt_do(rt_base_t flag)
  */
@@ -126,8 +121,6 @@ _reswitch:
 //mips_irq_handle:
     .globl handle_int
 handle_int:
-
-
     SAVE_ALL
     SAVE_FPU
 
@@ -141,12 +134,10 @@ handle_int:
     /* switch to kernel stack */
 	
     //li      sp, SYSTEM_STACK
-    
     //la      sp, SYSTEM_STACK
 	
     la      t0, SYSTEM_STACK
     sw		sp,0(t0)
-
 
     jal     rt_interrupt_enter
     nop
@@ -189,3 +180,5 @@ spurious_interrupt:
     RESTORE_ALL_AND_RET
 
     .set reorder
+
+	

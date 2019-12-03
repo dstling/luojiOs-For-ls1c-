@@ -37,14 +37,9 @@ struct net_device_stats
 
 
 typedef struct synopGMACNetworkAdapter{
-
 /*Device Dependent Data structur*/
 synopGMACdevice * synopGMACdev;
-
-
 struct net_device_stats synopGMACNetStats;
-
-
 struct mii_if_info mii;
 } synopGMACPciNetworkAdapter;
 
